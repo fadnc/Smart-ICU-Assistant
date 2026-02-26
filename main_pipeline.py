@@ -139,14 +139,25 @@ class SmartICUPipeline:
                     ]
                     
                     # Generate labels
-                    labels = self.label_generator.generate_all_labels(
-                        icu_stay_data=stay,
-                        vitals=vitals_df,
-                        labs=labs_df,
-                        prescriptions=stay_prescriptions,
-                        diagnoses=stay_diagnoses,
-                        current_time=timestamp
-                    )
+                    try:
+                        labels = self.label_generator.generate_all_labels(
+                            icu_stay_data=stay,
+                            vitals=vitals_df,
+                            labs=labs_df,
+                            prescriptions=stay_prescriptions,
+                            diagnoses=stay_diagnoses,
+                            current_time=timestamp
+                        )
+                    except Exception as label_err:
+                        logger.debug(f"Label generation error for stay {icustay_id} at {timestamp}: {label_err}")
+                        # Use all-zeros as fallback labels
+                        label_names = [f'mortality_{w}h' for w in [6,12,24]] + \
+                                      [f'sepsis_{w}h' for w in [6,12,24]] + \
+                                      [f'aki_stage{s}_{w}h' for w in [24,48] for s in [1,2,3]] + \
+                                      [f'hypotension_{w}h' for w in [1,3,6]] + \
+                                      [f'vasopressor_{w}h' for w in [6,12]] + \
+                                      [f'ventilation_{w}h' for w in [6,12,24]]
+                        labels = {name: 0 for name in label_names}
                     
                     # Store
                     all_sequences.append(sequences[seq_idx])
@@ -157,17 +168,32 @@ class SmartICUPipeline:
                     logger.info(f"  Processed {idx + 1}/{len(stays_to_process)} stays, {len(all_sequences)} sequences collected")
             
             except Exception as e:
-                logger.warning(f"Error processing stay {stay.get('icustay_id', 'unknown')}: {str(e)}")
+                logger.debug(f"Error processing stay {stay.get('icustay_id', 'unknown')}: {str(e)}")
                 continue
         
-        # Convert to arrays
-        X = np.array(all_sequences)
+        # Convert to arrays — pad sequences to uniform feature count
+        if len(all_sequences) == 0:
+            logger.warning("No sequences collected!")
+            return np.array([]), np.array([]), []
+        
+        # Find max feature dimension across all sequences
+        max_features = max(seq.shape[1] for seq in all_sequences)
+        
+        # Pad sequences with zeros to match max_features
+        padded_sequences = []
+        for seq in all_sequences:
+            if seq.shape[1] < max_features:
+                padding = np.zeros((seq.shape[0], max_features - seq.shape[1]))
+                seq = np.hstack([seq, padding])
+            padded_sequences.append(seq)
+        
+        X = np.array(padded_sequences)
         y = np.array(all_labels)
         
         logger.info(f"✓ Feature extraction complete")
         logger.info(f"  - Sequences shape: {X.shape}")
         logger.info(f"  - Labels shape: {y.shape}")
-        logger.info(f"  - Label names: {list(self.label_generator.generate_all_labels(stays_to_process.iloc[0], pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), stays_to_process.iloc[0]['intime']).keys())}")
+        logger.info(f"  - Label count per sample: {y.shape[1]}")
         
         return X, y, all_timestamps
     

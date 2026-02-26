@@ -98,10 +98,10 @@ class MIMICDataLoader:
         
         # Load with optional sampling for large files
         if sample_n:
-            self.chartevents = pd.read_csv(filepath, nrows=sample_n)
+            self.chartevents = pd.read_csv(filepath, nrows=sample_n, low_memory=False)
             logger.info(f"Loaded {sample_n} chart events (sampled)")
         else:
-            self.chartevents = pd.read_csv(filepath)
+            self.chartevents = pd.read_csv(filepath, low_memory=False)
             logger.info(f"Loaded {len(self.chartevents)} chart events")
         
         # Convert timestamps
@@ -113,7 +113,7 @@ class MIMICDataLoader:
         return self.chartevents
     
     def load_labevents(self) -> pd.DataFrame:
-        """Load laboratory test results"""
+        """Load laboratory test results and assign icustay_id via time-based join"""
         logger.info("Loading LABEVENTS...")
         filepath = os.path.join(self.data_dir, 'LABEVENTS.csv')
         self.labevents = pd.read_csv(filepath)
@@ -125,6 +125,26 @@ class MIMICDataLoader:
         self.labevents['valuenum'] = pd.to_numeric(self.labevents['valuenum'], errors='coerce')
         
         logger.info(f"Loaded {len(self.labevents)} lab events")
+        
+        # LABEVENTS.csv has no icustay_id column — assign via ICUSTAYS join
+        if self.icu_stays is not None:
+            logger.info("Assigning icustay_id to lab events via hadm_id + time overlap...")
+            labevents_merged = self.labevents.merge(
+                self.icu_stays[['subject_id', 'hadm_id', 'icustay_id', 'intime', 'outtime']],
+                on=['subject_id', 'hadm_id'],
+                how='left'
+            )
+            # Keep only lab events that fall within an ICU stay timeframe
+            mask = (
+                labevents_merged['icustay_id'].notna() &
+                (labevents_merged['charttime'] >= labevents_merged['intime']) &
+                (labevents_merged['charttime'] <= labevents_merged['outtime'])
+            )
+            self.labevents = labevents_merged[mask].drop(columns=['intime', 'outtime']).copy()
+            logger.info(f"Assigned icustay_id to {len(self.labevents)} lab events within ICU stays")
+        else:
+            logger.warning("ICU stays not loaded yet — labevents will lack icustay_id")
+        
         return self.labevents
     
     def load_diagnoses(self) -> pd.DataFrame:
@@ -231,12 +251,12 @@ class MIMICDataLoader:
         """
         logger.info("Starting data merge pipeline...")
         
-        # Load all tables
+        # Load all tables (ICU stays must be loaded before labevents for icustay_id join)
         self.load_patients()
         self.load_admissions()
         self.load_icu_stays()
         self.load_chartevents(sample_n=load_chart_sample)
-        self.load_labevents()
+        self.load_labevents()  # Requires icu_stays to be loaded first
         self.load_diagnoses()
         self.load_prescriptions()
         self.load_dictionaries()

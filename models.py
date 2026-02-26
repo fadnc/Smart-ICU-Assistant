@@ -326,6 +326,13 @@ class XGBoostPredictor:
         
         # Train each task model
         for i, model in enumerate(self.models):
+            # Skip tasks with degenerate labels (all same class)
+            if len(np.unique(y[:, i])) < 2:
+                if verbose:
+                    logger.info(f"Skipping task {i+1}/{self.num_tasks} (degenerate labels)")
+                self.models[i] = None  # Mark as untrained
+                continue
+            
             if verbose:
                 logger.info(f"Training task {i+1}/{self.num_tasks}...")
             
@@ -345,8 +352,12 @@ class XGBoostPredictor:
         
         predictions = []
         for model in self.models:
-            pred = model.predict_proba(X_flat)[:, 1]  # Get positive class probability
-            predictions.append(pred)
+            if model is None:
+                # Untrained model (degenerate labels) — predict neutral probability
+                predictions.append(np.full(len(X_flat), 0.5))
+            else:
+                pred = model.predict_proba(X_flat)[:, 1]  # Get positive class probability
+                predictions.append(pred)
         
         return np.column_stack(predictions)
     

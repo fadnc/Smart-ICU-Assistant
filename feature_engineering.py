@@ -204,8 +204,8 @@ class FeatureEngineer:
             return pd.DataFrame()
         
         # Resample to hourly intervals and forward fill
-        hourly = timeseries.resample('1H').mean()
-        hourly = hourly.fillna(method='ffill', limit=24)  # Forward fill up to 24 hours
+        hourly = timeseries.resample('1h').mean()
+        hourly = hourly.ffill(limit=24)  # Forward fill up to 24 hours
         
         # Rolling window aggregations
         window_size = window_hours
@@ -334,8 +334,8 @@ class FeatureEngineer:
             return np.array([]), []
         
         # Resample to hourly
-        hourly = timeseries.resample('1H').mean()
-        hourly = hourly.fillna(method='ffill', limit=24)
+        hourly = timeseries.resample('1h').mean()
+        hourly = hourly.ffill(limit=24)
         
         # Fill remaining NaNs with 0
         hourly = hourly.fillna(0)

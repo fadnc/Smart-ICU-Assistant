@@ -5,9 +5,25 @@ Tests individual components before running full pipeline
 
 import logging
 import sys
+import time
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Shared loader to avoid re-loading 758K CHARTEVENTS rows between tests
+_shared_loader = None
+_shared_merged = None
+
+
+def _get_shared_loader():
+    """Get or create a shared MIMICDataLoader instance"""
+    global _shared_loader, _shared_merged
+    if _shared_loader is None:
+        from data_loader import MIMICDataLoader
+        _shared_loader = MIMICDataLoader('demo', 'config.yaml')
+        _shared_merged = _shared_loader.merge_data()
+    return _shared_loader, _shared_merged
+
 
 def test_data_loader():
     """Test data loading"""
@@ -15,17 +31,20 @@ def test_data_loader():
     logger.info("TEST 1: Data Loader")
     logger.info("="*60)
     
+    t0 = time.time()
     try:
-        from data_loader import MIMICDataLoader
-        
-        loader = MIMICDataLoader('demo', 'config.yaml')
-        merged = loader.merge_data()
+        loader, merged = _get_shared_loader()
         
         logger.info(f"✓ Loaded {len(merged)} ICU stays")
         logger.info(f"✓ {merged['subject_id'].nunique()} unique patients")
+        logger.info(f"✓ Chartevents: {len(loader.chartevents)} rows")
+        logger.info(f"✓ Labevents: {len(loader.labevents)} rows (with icustay_id)")
+        logger.info(f"  Completed in {time.time()-t0:.1f}s")
         return True
     except Exception as e:
         logger.error(f"✗ Data loader failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
@@ -35,16 +54,16 @@ def test_feature_engineering():
     logger.info("TEST 2: Feature Engineering")
     logger.info("="*60)
     
+    t0 = time.time()
     try:
-        from data_loader import MIMICDataLoader
         from feature_engineering import FeatureEngineer
         
-        loader = MIMICDataLoader('demo', 'config.yaml')
-        merged = loader.merge_data()
+        loader, merged = _get_shared_loader()
         fe = FeatureEngineer('config.yaml')
         
         # Test on first stay
         first_stay = merged.iloc[0]
+        logger.info(f"  Extracting features for ICU stay {first_stay['icustay_id']}...")
         features = fe.extract_features_for_stay(
             icustay_id=first_stay['icustay_id'],
             icu_intime=first_stay['intime'],
@@ -57,6 +76,7 @@ def test_feature_engineering():
         )
         
         logger.info(f"✓ Extracted features: shape {features.shape}")
+        logger.info(f"  Completed in {time.time()-t0:.1f}s")
         return True
     except Exception as e:
         logger.error(f"✗ Feature engineering failed: {str(e)}")
@@ -71,6 +91,7 @@ def test_models():
     logger.info("TEST 3: Model Architectures")
     logger.info("="*60)
     
+    t0 = time.time()
     try:
         import torch
         import numpy as np
@@ -93,6 +114,7 @@ def test_models():
         xgb = XGBoostPredictor(num_tasks=6)
         logger.info(f"✓ XGBoost initialized")
         
+        logger.info(f"  Completed in {time.time()-t0:.1f}s")
         return True
     except Exception as e:
         logger.error(f"✗ Model test failed: {str(e)}")
@@ -107,6 +129,7 @@ def test_full_pipeline_quick():
     logger.info("TEST 4: Quick Pipeline Test (10 ICU stays)")
     logger.info("="*60)
     
+    t0 = time.time()
     try:
         from main_pipeline import SmartICUPipeline
         
@@ -117,10 +140,10 @@ def test_full_pipeline_quick():
         results = pipeline.run(sample_size=10)
         
         if results:
-            logger.info("✓ Pipeline completed successfully!")
+            logger.info(f"✓ Pipeline completed successfully! ({time.time()-t0:.1f}s)")
             return True
         else:
-            logger.warning("⚠ Pipeline returned no results (might need more data)")
+            logger.warning(f"⚠ Pipeline returned no results (might need more data) ({time.time()-t0:.1f}s)")
             return False
             
     except Exception as e:
@@ -135,6 +158,8 @@ def main():
     logger.info("\n" + "="*60)
     logger.info("SMART ICU ASSISTANT - COMPONENT TESTS")
     logger.info("="*60)
+    
+    total_start = time.time()
     
     tests = [
         ("Data Loader", test_data_loader),
@@ -164,6 +189,7 @@ def main():
     total_count = len(results)
     
     logger.info(f"\nTotal: {passed_count}/{total_count} tests passed")
+    logger.info(f"Total time: {time.time()-total_start:.1f}s")
     logger.info("="*60)
     
     return all(results.values())

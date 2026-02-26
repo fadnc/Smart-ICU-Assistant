@@ -1,9 +1,9 @@
 # Smart ICU Assistant Configuration
 
-# Data paths
-DATA_DIR: r"D:\PRJKT\SEM-4-PROJECT\data"
-OUTPUT_DIR: r"D:\PRJKT\SEM-4-PROJECT\output"
-MODEL_DIR: r"D:\PRJKT\SEM-4-PROJECT\models"
+# Data paths (relative to project root)
+DATA_DIR: data
+OUTPUT_DIR: output
+MODEL_DIR: models
 
 # Preprocessing parameters
 TIME_WINDOWS:
