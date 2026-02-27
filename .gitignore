@@ -211,3 +211,5 @@ data/
 demo/
 models/
 output/
+
+best_model.pth
