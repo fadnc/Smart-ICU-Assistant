@@ -7,6 +7,7 @@ import os
 import sys
 import yaml
 import logging
+import tempfile
 import argparse
 import json
 import numpy as np
@@ -105,18 +106,32 @@ class SmartICUPipeline:
 
         stays = self.merged_data if sample_size is None else self.merged_data.head(sample_size)
         logger.info(f"Processing {len(stays)} ICU stays...")
+        # Pre-index by icustay_id for O(1) lookup
+        logger.info("Pre-indexing chartevents and labevents by icustay_id...")
+        charts_grouped = dict(tuple(
+            self.data_loader.chartevents.groupby('icustay_id')
+        )) if self.data_loader.chartevents is not None else {}
+
+        labs_grouped = dict(tuple(
+            self.data_loader.labevents.groupby('icustay_id')
+        )) if self.data_loader.labevents is not None else {}
+
+        logger.info("Pre-indexing complete.")
 
         for idx, stay in stays.iterrows():
             try:
                 icustay_id = stay['icustay_id']
+                # O(1) lookup instead of filtering full tables each iteration
+                stay_charts = charts_grouped.get(icustay_id, pd.DataFrame())
+                stay_labs = labs_grouped.get(icustay_id, pd.DataFrame())
 
                 # Extract feature-engineered sequences
                 features = self.feature_engineer.extract_features_for_stay(
                     icustay_id=icustay_id,
                     icu_intime=stay['intime'],
                     icu_outtime=stay['outtime'],
-                    chartevents=self.data_loader.chartevents,
-                    labevents=self.data_loader.labevents,
+                    chartevents=stay_charts,
+                    labevents=stay_labs,
                     d_items=self.data_loader.d_items,
                     d_labitems=self.data_loader.d_labitems,
                     window_hours=self.config.get('LSTM_CONFIG', {}).get('sequence_length', 24)
