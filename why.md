@@ -28,7 +28,7 @@ RAM needed	~2 GB	~16-32 GB (with chunking)
 
 This will take ~30-45 minutes to load the full 33.6 GB CHARTEVENTS file via chunked reading. After that, feature extraction and model training will take another ~1-2 hours on CPU.
 
- CHARTEVENTS loading is at 10M rows. This will take 30-45 minutes for the 330M row file. Let me keep monitoring
+ CHARTEVENTS loading is at 10M rows. This will take 30-45 minutes for the 330M row file.
 
 
 to run : python main_pipeline.py --data_dir data 2>&1
