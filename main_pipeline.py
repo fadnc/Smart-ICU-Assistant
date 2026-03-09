@@ -151,11 +151,11 @@ class SmartICUPipeline:
 
                 # Extract RAW vitals/labs for label generation
                 raw_vitals = self.feature_engineer.extract_vital_signs(
-                    self.data_loader.chartevents, self.data_loader.d_items,
+                    stay_charts, self.data_loader.d_items,
                     icustay_id, stay['intime'], stay['outtime']
                 )
                 raw_labs = self.feature_engineer.extract_lab_tests(
-                    self.data_loader.labevents, self.data_loader.d_labitems,
+                    stay_labs, self.data_loader.d_labitems,
                     icustay_id, stay['intime'], stay['outtime']
                 )
 
