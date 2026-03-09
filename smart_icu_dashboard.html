@@ -1,938 +1,1458 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Smart ICU Assistant</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.8.0/Recharts.min.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet" />
-<style>
-  :root {
-    --bg:        #050b14;
-    --bg2:       #080f1c;
-    --bg3:       #0b1425;
-    --panel:     #0d1a2e;
-    --border:    #162540;
-    --border2:   #1e3358;
-    --text:      #c8ddf5;
-    --text2:     #7a9bc4;
-    --text3:     #3d5f8a;
-    --accent:    #00d4ff;
-    --accent2:   #0090cc;
-    --green:     #00e5a0;
-    --yellow:    #ffcc00;
-    --red:       #ff3b5c;
-    --orange:    #ff8c00;
-    --mono:      'Share Tech Mono', monospace;
-    --sans:      'DM Sans', sans-serif;
-  }
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body, #root { height: 100%; }
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--sans);
-    font-size: 13px;
-    overflow: hidden;
-  }
-  /* scrollbars */
-  ::-webkit-scrollbar { width: 4px; height: 4px; }
-  ::-webkit-scrollbar-track { background: var(--bg2); }
-  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Smart ICU Assistant</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.8.0/Recharts.min.js"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=DM+Sans:wght@300;400;500;600&display=swap"
+        rel="stylesheet" />
+    <style>
+        :root {
+            --bg: #050b14;
+            --bg2: #080f1c;
+            --bg3: #0b1425;
+            --panel: #0d1a2e;
+            --border: #162540;
+            --border2: #1e3358;
+            --text: #c8ddf5;
+            --text2: #7a9bc4;
+            --text3: #3d5f8a;
+            --accent: #00d4ff;
+            --accent2: #0090cc;
+            --green: #00e5a0;
+            --yellow: #ffcc00;
+            --red: #ff3b5c;
+            --orange: #ff8c00;
+            --mono: 'Share Tech Mono', monospace;
+            --sans: 'DM Sans', sans-serif;
+        }
 
-  /* ── Layout ── */
-  .app { display: flex; flex-direction: column; height: 100vh; }
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
 
-  /* Header */
-  .header {
-    display: flex; align-items: center; gap: 16px;
-    padding: 0 20px; height: 52px;
-    background: var(--bg2);
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-  .header-logo {
-    font-family: var(--mono); font-size: 14px; color: var(--accent);
-    letter-spacing: 2px; text-transform: uppercase;
-  }
-  .header-logo span { color: var(--text3); }
-  .header-time {
-    font-family: var(--mono); font-size: 11px; color: var(--text3);
-    margin-left: auto;
-  }
-  .header-dot {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: var(--green);
-    box-shadow: 0 0 6px var(--green);
-    animation: pulse 2s ease-in-out infinite;
-  }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+        html,
+        body,
+        #root {
+            height: 100%;
+        }
 
-  /* Tabs */
-  .tabs {
-    display: flex; gap: 2px; padding: 0 20px;
-    background: var(--bg2); border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-  .tab {
-    padding: 10px 16px; font-size: 11px; font-weight: 500;
-    letter-spacing: 1px; text-transform: uppercase; color: var(--text3);
-    cursor: pointer; border: none; background: none;
-    border-bottom: 2px solid transparent; transition: all .15s;
-  }
-  .tab:hover { color: var(--text2); }
-  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--sans);
+            font-size: 13px;
+            overflow: hidden;
+        }
 
-  /* Main layout */
-  .main { display: flex; flex: 1; overflow: hidden; }
+        /* scrollbars */
+        ::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
 
-  /* Sidebar */
-  .sidebar {
-    width: 300px; flex-shrink: 0;
-    background: var(--bg2); border-right: 1px solid var(--border);
-    display: flex; flex-direction: column; overflow: hidden;
-  }
-  .sidebar-search {
-    padding: 12px;
-    border-bottom: 1px solid var(--border);
-  }
-  .search-input {
-    width: 100%; padding: 7px 10px;
-    background: var(--bg3); border: 1px solid var(--border2);
-    border-radius: 4px; color: var(--text); font-family: var(--sans);
-    font-size: 12px; outline: none;
-  }
-  .search-input:focus { border-color: var(--accent2); }
-  .search-input::placeholder { color: var(--text3); }
-  .filter-row {
-    display: flex; gap: 6px; margin-top: 8px;
-  }
-  .filter-btn {
-    flex: 1; padding: 4px 6px; font-size: 10px;
-    border: 1px solid var(--border2); border-radius: 3px;
-    background: var(--bg3); color: var(--text3);
-    cursor: pointer; font-family: var(--sans);
-    transition: all .15s;
-  }
-  .filter-btn:hover { border-color: var(--accent2); color: var(--text); }
-  .filter-btn.active-high   { background: rgba(255,59,92,.15); border-color: var(--red);    color: var(--red); }
-  .filter-btn.active-medium { background: rgba(255,140,0,.15); border-color: var(--orange); color: var(--orange); }
-  .filter-btn.active-low    { background: rgba(0,229,160,.15); border-color: var(--green);  color: var(--green); }
+        ::-webkit-scrollbar-track {
+            background: var(--bg2);
+        }
 
-  .patient-list { flex: 1; overflow-y: auto; }
-  .patient-item {
-    padding: 10px 12px; border-bottom: 1px solid var(--border);
-    cursor: pointer; transition: background .1s;
-    display: flex; flex-direction: column; gap: 3px;
-  }
-  .patient-item:hover { background: rgba(0,212,255,.04); }
-  .patient-item.selected { background: rgba(0,212,255,.08); border-left: 2px solid var(--accent); }
-  .pi-top { display: flex; justify-content: space-between; align-items: center; }
-  .pi-id { font-family: var(--mono); font-size: 11px; color: var(--accent); }
-  .pi-name { font-size: 11px; color: var(--text2); }
-  .pi-diag { font-size: 10px; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .risk-badge {
-    padding: 2px 6px; border-radius: 2px; font-size: 9px;
-    font-weight: 600; letter-spacing: 1px; font-family: var(--mono);
-  }
-  .risk-HIGH   { background: rgba(255,59,92,.2);  color: var(--red);    border: 1px solid rgba(255,59,92,.4); }
-  .risk-MEDIUM { background: rgba(255,140,0,.2);  color: var(--orange); border: 1px solid rgba(255,140,0,.4); }
-  .risk-LOW    { background: rgba(0,229,160,.2);  color: var(--green);  border: 1px solid rgba(0,229,160,.4); }
+        ::-webkit-scrollbar-thumb {
+            background: var(--border2);
+            border-radius: 2px;
+        }
 
-  .score-bar-wrap { display: flex; align-items: center; gap: 6px; }
-  .score-bar {
-    flex: 1; height: 2px; background: var(--border); border-radius: 1px; overflow: hidden;
-  }
-  .score-bar-fill { height: 100%; border-radius: 1px; }
-  .score-val { font-family: var(--mono); font-size: 10px; color: var(--text3); min-width: 28px; text-align: right; }
+        /* ── Layout ── */
+        .app {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
 
-  /* Content area */
-  .content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
-  .content-scroll { flex: 1; overflow-y: auto; padding: 16px; }
+        /* Header */
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 0 20px;
+            height: 52px;
+            background: var(--bg2);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
 
-  /* Cards */
-  .card {
-    background: var(--panel); border: 1px solid var(--border);
-    border-radius: 6px; overflow: hidden;
-  }
-  .card-header {
-    padding: 10px 14px; border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: space-between;
-  }
-  .card-title {
-    font-family: var(--mono); font-size: 10px; color: var(--text2);
-    letter-spacing: 2px; text-transform: uppercase;
-  }
-  .card-body { padding: 14px; }
+        .header-logo {
+            font-family: var(--mono);
+            font-size: 14px;
+            color: var(--accent);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
 
-  /* Grid layouts */
-  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
-  .grid-4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
+        .header-logo span {
+            color: var(--text3);
+        }
 
-  /* Stat tile */
-  .stat-tile {
-    background: var(--bg3); border: 1px solid var(--border);
-    border-radius: 5px; padding: 12px 14px;
-  }
-  .stat-label { font-size: 9px; color: var(--text3); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 4px; }
-  .stat-value { font-family: var(--mono); font-size: 22px; color: var(--text); }
-  .stat-value.accent { color: var(--accent); }
-  .stat-value.green  { color: var(--green); }
-  .stat-value.red    { color: var(--red); }
-  .stat-value.yellow { color: var(--yellow); }
-  .stat-sub { font-size: 10px; color: var(--text3); margin-top: 2px; }
+        .header-time {
+            font-family: var(--mono);
+            font-size: 11px;
+            color: var(--text3);
+            margin-left: auto;
+        }
 
-  /* Patient header */
-  .pt-header {
-    display: flex; gap: 12px; align-items: flex-start;
-    background: var(--bg3); border: 1px solid var(--border);
-    border-radius: 6px; padding: 14px 16px; margin-bottom: 12px;
-  }
-  .pt-id-block { font-family: var(--mono); }
-  .pt-icustay { font-size: 20px; color: var(--accent); }
-  .pt-sub { font-size: 10px; color: var(--text3); margin-top: 2px; }
-  .pt-meta { display: flex; flex-wrap: wrap; gap: 16px; flex: 1; }
-  .pt-meta-item { display: flex; flex-direction: column; gap: 2px; }
-  .pt-meta-label { font-size: 9px; color: var(--text3); letter-spacing: 1.5px; text-transform: uppercase; }
-  .pt-meta-val { font-size: 13px; color: var(--text); font-weight: 500; }
-  .composite-circle {
-    width: 80px; height: 80px; border-radius: 50%;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    flex-shrink: 0;
-    border: 2px solid var(--border);
-  }
-  .cc-score { font-family: var(--mono); font-size: 20px; font-weight: 600; }
-  .cc-label { font-size: 8px; color: var(--text3); letter-spacing: 1px; margin-top: 2px; }
+        .header-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--green);
+            box-shadow: 0 0 6px var(--green);
+            animation: pulse 2s ease-in-out infinite;
+        }
 
-  /* Prediction groups */
-  .pred-group { margin-bottom: 12px; }
-  .pred-group-title {
-    font-family: var(--mono); font-size: 9px; color: var(--text3);
-    letter-spacing: 2px; text-transform: uppercase;
-    margin-bottom: 8px; padding-bottom: 4px;
-    border-bottom: 1px solid var(--border);
-  }
-  .pred-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; }
-  .pred-item {
-    background: var(--bg3); border: 1px solid var(--border);
-    border-radius: 4px; padding: 8px 10px;
-  }
-  .pred-item-label { font-size: 9px; color: var(--text3); margin-bottom: 4px; }
-  .pred-item-score { font-family: var(--mono); font-size: 14px; margin-bottom: 4px; }
-  .pred-mini-bar {
-    height: 2px; background: var(--border); border-radius: 1px; overflow: hidden;
-  }
-  .pred-mini-fill { height: 100%; border-radius: 1px; }
+        @keyframes pulse {
 
-  /* Charts */
-  .chart-wrap { width: 100%; height: 180px; }
+            0%,
+            100% {
+                opacity: 1
+            }
 
-  /* Alerts */
-  .alert-item {
-    background: var(--bg3); border: 1px solid var(--border);
-    border-left: 3px solid var(--red);
-    border-radius: 4px; padding: 10px 12px; margin-bottom: 8px;
-  }
-  .alert-item.medium { border-left-color: var(--orange); }
-  .alert-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-  .alert-id { font-family: var(--mono); font-size: 12px; color: var(--accent); }
-  .alert-diag { font-size: 11px; color: var(--text2); margin-bottom: 4px; }
-  .alert-triggers { display: flex; gap: 6px; flex-wrap: wrap; }
-  .alert-trigger {
-    padding: 2px 7px; border-radius: 2px; font-size: 9px;
-    background: rgba(255,59,92,.12); border: 1px solid rgba(255,59,92,.3);
-    color: var(--red); font-family: var(--mono);
-  }
+            50% {
+                opacity: 0.4
+            }
+        }
 
-  /* SHAP */
-  .shap-row {
-    display: flex; align-items: center; gap: 10px;
-    padding: 5px 0; border-bottom: 1px solid var(--border);
-  }
-  .shap-feature { width: 180px; font-size: 11px; color: var(--text2); font-family: var(--mono); flex-shrink: 0; }
-  .shap-bar-wrap { flex: 1; }
-  .shap-bar { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
-  .shap-bar-fill { height: 100%; border-radius: 2px; background: var(--accent); }
-  .shap-val { font-family: var(--mono); font-size: 10px; color: var(--text3); min-width: 36px; text-align: right; }
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 2px;
+            padding: 0 20px;
+            background: var(--bg2);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
 
-  /* Empty state */
-  .empty {
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    height: 200px; color: var(--text3); gap: 8px;
-  }
-  .empty-icon { font-size: 32px; opacity: .3; }
-  .empty-text { font-size: 12px; font-family: var(--mono); }
+        .tab {
+            padding: 10px 16px;
+            font-size: 11px;
+            font-weight: 500;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: var(--text3);
+            cursor: pointer;
+            border: none;
+            background: none;
+            border-bottom: 2px solid transparent;
+            transition: all .15s;
+        }
 
-  /* Loading */
-  .loading {
-    display: flex; align-items: center; justify-content: center;
-    height: 100px; color: var(--text3);
-    font-family: var(--mono); font-size: 11px; letter-spacing: 2px;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .spinner {
-    width: 16px; height: 16px; border: 2px solid var(--border2);
-    border-top-color: var(--accent); border-radius: 50%;
-    animation: spin .6s linear infinite; margin-right: 10px;
-  }
+        .tab:hover {
+            color: var(--text2);
+        }
 
-  /* Unit pill */
-  .unit-pill {
-    padding: 2px 8px; border-radius: 2px; font-size: 9px;
-    background: rgba(0,144,204,.15); border: 1px solid rgba(0,144,204,.3);
-    color: var(--accent2); font-family: var(--mono);
-  }
+        .tab.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
 
-  /* Pagination */
-  .pagination {
-    display: flex; gap: 4px; align-items: center;
-    justify-content: center; padding: 10px;
-    border-top: 1px solid var(--border);
-  }
-  .page-btn {
-    padding: 3px 8px; background: var(--bg3); border: 1px solid var(--border2);
-    border-radius: 3px; color: var(--text3); cursor: pointer; font-size: 11px;
-    font-family: var(--mono);
-  }
-  .page-btn:hover { border-color: var(--accent2); color: var(--text); }
-  .page-btn.active { background: rgba(0,212,255,.1); border-color: var(--accent); color: var(--accent); }
-  .page-info { font-size: 10px; color: var(--text3); font-family: var(--mono); padding: 0 6px; }
+        /* Main layout */
+        .main {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
 
-  /* Section spacing */
-  .section { margin-bottom: 12px; }
-  .mb8 { margin-bottom: 8px; }
+        /* Sidebar */
+        .sidebar {
+            width: 300px;
+            flex-shrink: 0;
+            background: var(--bg2);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
 
-  /* Vital cards */
-  .vital-now {
-    display: grid; grid-template-columns: repeat(4,1fr); gap: 8px;
-    margin-bottom: 12px;
-  }
-  .vital-card {
-    background: var(--bg3); border: 1px solid var(--border);
-    border-radius: 5px; padding: 10px 12px;
-  }
-  .vc-label { font-size: 9px; color: var(--text3); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 2px; }
-  .vc-val { font-family: var(--mono); font-size: 18px; }
-  .vc-unit { font-size: 9px; color: var(--text3); margin-left: 2px; }
-  .vc-status { font-size: 9px; margin-top: 2px; }
+        .sidebar-search {
+            padding: 12px;
+            border-bottom: 1px solid var(--border);
+        }
 
-  /* Scan line effect */
-  .scan-effect::after {
-    content: '';
-    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-    background: repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 2px,
-      rgba(0,0,0,.03) 2px,
-      rgba(0,0,0,.03) 4px
-    );
-    pointer-events: none; z-index: 9999;
-  }
+        .search-input {
+            width: 100%;
+            padding: 7px 10px;
+            background: var(--bg3);
+            border: 1px solid var(--border2);
+            border-radius: 4px;
+            color: var(--text);
+            font-family: var(--sans);
+            font-size: 12px;
+            outline: none;
+        }
 
-  .chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
-</style>
+        .search-input:focus {
+            border-color: var(--accent2);
+        }
+
+        .search-input::placeholder {
+            color: var(--text3);
+        }
+
+        .filter-row {
+            display: flex;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .filter-btn {
+            flex: 1;
+            padding: 4px 6px;
+            font-size: 10px;
+            border: 1px solid var(--border2);
+            border-radius: 3px;
+            background: var(--bg3);
+            color: var(--text3);
+            cursor: pointer;
+            font-family: var(--sans);
+            transition: all .15s;
+        }
+
+        .filter-btn:hover {
+            border-color: var(--accent2);
+            color: var(--text);
+        }
+
+        .filter-btn.active-high {
+            background: rgba(255, 59, 92, .15);
+            border-color: var(--red);
+            color: var(--red);
+        }
+
+        .filter-btn.active-medium {
+            background: rgba(255, 140, 0, .15);
+            border-color: var(--orange);
+            color: var(--orange);
+        }
+
+        .filter-btn.active-low {
+            background: rgba(0, 229, 160, .15);
+            border-color: var(--green);
+            color: var(--green);
+        }
+
+        .patient-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .patient-item {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            transition: background .1s;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .patient-item:hover {
+            background: rgba(0, 212, 255, .04);
+        }
+
+        .patient-item.selected {
+            background: rgba(0, 212, 255, .08);
+            border-left: 2px solid var(--accent);
+        }
+
+        .pi-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .pi-id {
+            font-family: var(--mono);
+            font-size: 11px;
+            color: var(--accent);
+        }
+
+        .pi-name {
+            font-size: 11px;
+            color: var(--text2);
+        }
+
+        .pi-diag {
+            font-size: 10px;
+            color: var(--text3);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .risk-badge {
+            padding: 2px 6px;
+            border-radius: 2px;
+            font-size: 9px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            font-family: var(--mono);
+        }
+
+        .risk-HIGH {
+            background: rgba(255, 59, 92, .2);
+            color: var(--red);
+            border: 1px solid rgba(255, 59, 92, .4);
+        }
+
+        .risk-MEDIUM {
+            background: rgba(255, 140, 0, .2);
+            color: var(--orange);
+            border: 1px solid rgba(255, 140, 0, .4);
+        }
+
+        .risk-LOW {
+            background: rgba(0, 229, 160, .2);
+            color: var(--green);
+            border: 1px solid rgba(0, 229, 160, .4);
+        }
+
+        .score-bar-wrap {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .score-bar {
+            flex: 1;
+            height: 2px;
+            background: var(--border);
+            border-radius: 1px;
+            overflow: hidden;
+        }
+
+        .score-bar-fill {
+            height: 100%;
+            border-radius: 1px;
+        }
+
+        .score-val {
+            font-family: var(--mono);
+            font-size: 10px;
+            color: var(--text3);
+            min-width: 28px;
+            text-align: right;
+        }
+
+        /* Content area */
+        .content {
+            flex: 1;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .content-scroll {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .card-header {
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .card-title {
+            font-family: var(--mono);
+            font-size: 10px;
+            color: var(--text2);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .card-body {
+            padding: 14px;
+        }
+
+        /* Grid layouts */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px;
+        }
+
+        .grid-4 {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+        }
+
+        /* Stat tile */
+        .stat-tile {
+            background: var(--bg3);
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            padding: 12px 14px;
+        }
+
+        .stat-label {
+            font-size: 9px;
+            color: var(--text3);
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .stat-value {
+            font-family: var(--mono);
+            font-size: 22px;
+            color: var(--text);
+        }
+
+        .stat-value.accent {
+            color: var(--accent);
+        }
+
+        .stat-value.green {
+            color: var(--green);
+        }
+
+        .stat-value.red {
+            color: var(--red);
+        }
+
+        .stat-value.yellow {
+            color: var(--yellow);
+        }
+
+        .stat-sub {
+            font-size: 10px;
+            color: var(--text3);
+            margin-top: 2px;
+        }
+
+        /* Patient header */
+        .pt-header {
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+            background: var(--bg3);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 14px 16px;
+            margin-bottom: 12px;
+        }
+
+        .pt-id-block {
+            font-family: var(--mono);
+        }
+
+        .pt-icustay {
+            font-size: 20px;
+            color: var(--accent);
+        }
+
+        .pt-sub {
+            font-size: 10px;
+            color: var(--text3);
+            margin-top: 2px;
+        }
+
+        .pt-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            flex: 1;
+        }
+
+        .pt-meta-item {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .pt-meta-label {
+            font-size: 9px;
+            color: var(--text3);
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+        }
+
+        .pt-meta-val {
+            font-size: 13px;
+            color: var(--text);
+            font-weight: 500;
+        }
+
+        .composite-circle {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            border: 2px solid var(--border);
+        }
+
+        .cc-score {
+            font-family: var(--mono);
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .cc-label {
+            font-size: 8px;
+            color: var(--text3);
+            letter-spacing: 1px;
+            margin-top: 2px;
+        }
+
+        /* Prediction groups */
+        .pred-group {
+            margin-bottom: 12px;
+        }
+
+        .pred-group-title {
+            font-family: var(--mono);
+            font-size: 9px;
+            color: var(--text3);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .pred-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+        }
+
+        .pred-item {
+            background: var(--bg3);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 8px 10px;
+        }
+
+        .pred-item-label {
+            font-size: 9px;
+            color: var(--text3);
+            margin-bottom: 4px;
+        }
+
+        .pred-item-score {
+            font-family: var(--mono);
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+
+        .pred-mini-bar {
+            height: 2px;
+            background: var(--border);
+            border-radius: 1px;
+            overflow: hidden;
+        }
+
+        .pred-mini-fill {
+            height: 100%;
+            border-radius: 1px;
+        }
+
+        /* Charts */
+        .chart-wrap {
+            width: 100%;
+            height: 180px;
+        }
+
+        /* Alerts */
+        .alert-item {
+            background: var(--bg3);
+            border: 1px solid var(--border);
+            border-left: 3px solid var(--red);
+            border-radius: 4px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+        }
+
+        .alert-item.medium {
+            border-left-color: var(--orange);
+        }
+
+        .alert-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .alert-id {
+            font-family: var(--mono);
+            font-size: 12px;
+            color: var(--accent);
+        }
+
+        .alert-diag {
+            font-size: 11px;
+            color: var(--text2);
+            margin-bottom: 4px;
+        }
+
+        .alert-triggers {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .alert-trigger {
+            padding: 2px 7px;
+            border-radius: 2px;
+            font-size: 9px;
+            background: rgba(255, 59, 92, .12);
+            border: 1px solid rgba(255, 59, 92, .3);
+            color: var(--red);
+            font-family: var(--mono);
+        }
+
+        /* SHAP */
+        .shap-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 5px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .shap-feature {
+            width: 180px;
+            font-size: 11px;
+            color: var(--text2);
+            font-family: var(--mono);
+            flex-shrink: 0;
+        }
+
+        .shap-bar-wrap {
+            flex: 1;
+        }
+
+        .shap-bar {
+            height: 4px;
+            background: var(--border);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .shap-bar-fill {
+            height: 100%;
+            border-radius: 2px;
+            background: var(--accent);
+        }
+
+        .shap-val {
+            font-family: var(--mono);
+            font-size: 10px;
+            color: var(--text3);
+            min-width: 36px;
+            text-align: right;
+        }
+
+        /* Empty state */
+        .empty {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 200px;
+            color: var(--text3);
+            gap: 8px;
+        }
+
+        .empty-icon {
+            font-size: 32px;
+            opacity: .3;
+        }
+
+        .empty-text {
+            font-size: 12px;
+            font-family: var(--mono);
+        }
+
+        /* Loading */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100px;
+            color: var(--text3);
+            font-family: var(--mono);
+            font-size: 11px;
+            letter-spacing: 2px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--border2);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin .6s linear infinite;
+            margin-right: 10px;
+        }
+
+        /* Unit pill */
+        .unit-pill {
+            padding: 2px 8px;
+            border-radius: 2px;
+            font-size: 9px;
+            background: rgba(0, 144, 204, .15);
+            border: 1px solid rgba(0, 144, 204, .3);
+            color: var(--accent2);
+            font-family: var(--mono);
+        }
+
+        /* Pagination */
+        .pagination {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+            justify-content: center;
+            padding: 10px;
+            border-top: 1px solid var(--border);
+        }
+
+        .page-btn {
+            padding: 3px 8px;
+            background: var(--bg3);
+            border: 1px solid var(--border2);
+            border-radius: 3px;
+            color: var(--text3);
+            cursor: pointer;
+            font-size: 11px;
+            font-family: var(--mono);
+        }
+
+        .page-btn:hover {
+            border-color: var(--accent2);
+            color: var(--text);
+        }
+
+        .page-btn.active {
+            background: rgba(0, 212, 255, .1);
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .page-info {
+            font-size: 10px;
+            color: var(--text3);
+            font-family: var(--mono);
+            padding: 0 6px;
+        }
+
+        /* Section spacing */
+        .section {
+            margin-bottom: 12px;
+        }
+
+        .mb8 {
+            margin-bottom: 8px;
+        }
+
+        /* Vital cards */
+        .vital-now {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .vital-card {
+            background: var(--bg3);
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            padding: 10px 12px;
+        }
+
+        .vc-label {
+            font-size: 9px;
+            color: var(--text3);
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            margin-bottom: 2px;
+        }
+
+        .vc-val {
+            font-family: var(--mono);
+            font-size: 18px;
+        }
+
+        .vc-unit {
+            font-size: 9px;
+            color: var(--text3);
+            margin-left: 2px;
+        }
+
+        .vc-status {
+            font-size: 9px;
+            margin-top: 2px;
+        }
+
+        /* Scan line effect */
+        .scan-effect::after {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: repeating-linear-gradient(0deg,
+                    transparent,
+                    transparent 2px,
+                    rgba(0, 0, 0, .03) 2px,
+                    rgba(0, 0, 0, .03) 4px);
+            pointer-events: none;
+            z-index: 9999;
+        }
+
+        .chart-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+    </style>
 </head>
+
 <body class="scan-effect">
-<div id="root"></div>
+    <div id="root"></div>
 
-<script type="text/babel">
-const { useState, useEffect, useCallback, useRef } = React;
-const {
-  LineChart, Line, AreaChart, Area, BarChart, Bar,
-  XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine
-} = Recharts;
+    <script type="text/babel">
+        const { useState, useEffect, useCallback, useRef } = React;
+        const {
+            LineChart, Line, AreaChart, Area, BarChart, Bar,
+            XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine
+        } = Recharts;
 
-const API = "http://localhost:5000/api";
+        const API = window.location.port === "8000" ? "/api" : "http://localhost:8000/api";
 
-// ── Utilities ────────────────────────────────────────────────────────────────
+        // ── Utilities ────────────────────────────────────────────────────────────────
 
-function riskColor(r) {
-  if (r === "HIGH")   return "var(--red)";
-  if (r === "MEDIUM") return "var(--orange)";
-  return "var(--green)";
-}
+        function riskColor(r) {
+            if (r === "HIGH") return "var(--red)";
+            if (r === "MEDIUM") return "var(--orange)";
+            return "var(--green)";
+        }
 
-function scoreColor(s) {
-  if (s > 0.7) return "var(--red)";
-  if (s > 0.4) return "var(--orange)";
-  return "var(--green)";
-}
+        function scoreColor(s) {
+            if (s > 0.7) return "var(--red)";
+            if (s > 0.4) return "var(--orange)";
+            return "var(--green)";
+        }
 
-function fmtScore(s) { return (s * 100).toFixed(0) + "%"; }
+        function fmtScore(s) { return (s * 100).toFixed(0) + "%"; }
 
-function fmtTime(iso) {
-  const d = new Date(iso);
-  return `${d.getHours().toString().padStart(2,"0")}:${d.getMinutes().toString().padStart(2,"0")}`;
-}
+        function fmtTime(iso) {
+            const d = new Date(iso);
+            return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+        }
 
-function useFetch(url, deps=[]) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  useEffect(() => {
-    if (!url) return;
-    setLoading(true); setError(null);
-    fetch(url)
-      .then(r => r.json())
-      .then(d => { setData(d); setLoading(false); })
-      .catch(e => { setError(e.message); setLoading(false); });
-  }, deps);
-  return { data, loading, error };
-}
+        function useFetch(url, deps = []) {
+            const [data, setData] = useState(null);
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState(null);
+            useEffect(() => {
+                if (!url) return;
+                setLoading(true); setError(null);
+                fetch(url)
+                    .then(r => r.json())
+                    .then(d => { setData(d); setLoading(false); })
+                    .catch(e => { setError(e.message); setLoading(false); });
+            }, deps);
+            return { data, loading, error };
+        }
 
-// ── Live Clock ────────────────────────────────────────────────────────────────
-function Clock() {
-  const [t, setT] = useState(new Date());
-  useEffect(() => { const id = setInterval(() => setT(new Date()), 1000); return () => clearInterval(id); }, []);
-  return (
-    <span className="header-time">
-      {t.toLocaleDateString("en-GB")} &nbsp; {t.toLocaleTimeString("en-GB")}
-    </span>
-  );
-}
-
-// ── Patient List Item ─────────────────────────────────────────────────────────
-function PatientItem({ p, selected, onClick }) {
-  return (
-    <div className={`patient-item ${selected ? "selected" : ""}`} onClick={onClick}>
-      <div className="pi-top">
-        <span className="pi-id">#{p.icustay_id}</span>
-        <span className={`risk-badge risk-${p.risk_level}`}>{p.risk_level}</span>
-      </div>
-      <div className="pi-name">
-        {p.gender === "M" ? "♂" : "♀"} · {p.age ? Math.round(p.age) + " yrs" : "—"} ·{" "}
-        <span style={{ color: "var(--text3)" }}>{p.first_careunit || "—"}</span>
-      </div>
-      <div className="pi-diag">{p.diagnosis || "No diagnosis recorded"}</div>
-      <div className="score-bar-wrap" style={{ marginTop: 4 }}>
-        <div className="score-bar">
-          <div className="score-bar-fill" style={{
-            width: (p.composite_score * 100) + "%",
-            background: riskColor(p.risk_level)
-          }}/>
-        </div>
-        <span className="score-val">{fmtScore(p.composite_score)}</span>
-      </div>
-    </div>
-  );
-}
-
-// ── Sidebar ───────────────────────────────────────────────────────────────────
-function Sidebar({ selected, onSelect }) {
-  const [q, setQ] = useState("");
-  const [risk, setRisk] = useState("");
-  const [page, setPage] = useState(1);
-
-  const url = `${API}/patients?q=${encodeURIComponent(q)}&risk=${risk}&page=${page}&per_page=18`;
-  const { data, loading } = useFetch(url, [q, risk, page]);
-
-  const patients = data?.patients || [];
-  const pages    = data?.pages || 1;
-
-  return (
-    <div className="sidebar">
-      <div className="sidebar-search">
-        <input
-          className="search-input"
-          placeholder="Search ID, diagnosis, unit…"
-          value={q}
-          onChange={e => { setQ(e.target.value); setPage(1); }}
-        />
-        <div className="filter-row">
-          {["HIGH","MEDIUM","LOW"].map(r => (
-            <button
-              key={r}
-              className={`filter-btn ${risk===r ? "active-"+r.toLowerCase() : ""}`}
-              onClick={() => { setRisk(risk===r?"":r); setPage(1); }}
-            >{r}</button>
-          ))}
-        </div>
-      </div>
-
-      <div className="patient-list">
-        {loading && <div className="loading"><div className="spinner"/>LOADING</div>}
-        {!loading && patients.map(p => (
-          <PatientItem
-            key={p.icustay_id}
-            p={p}
-            selected={selected?.icustay_id === p.icustay_id}
-            onClick={() => onSelect(p)}
-          />
-        ))}
-        {!loading && patients.length === 0 && (
-          <div className="empty">
-            <div className="empty-icon">◎</div>
-            <div className="empty-text">NO PATIENTS FOUND</div>
-          </div>
-        )}
-      </div>
-
-      {pages > 1 && (
-        <div className="pagination">
-          <button className="page-btn" onClick={() => setPage(p=>Math.max(1,p-1))} disabled={page===1}>‹</button>
-          <span className="page-info">{page} / {pages}</span>
-          <button className="page-btn" onClick={() => setPage(p=>Math.min(pages,p+1))} disabled={page===pages}>›</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Overview Tab ─────────────────────────────────────────────────────────────
-function OverviewTab() {
-  const { data: stats, loading } = useFetch(`${API}/stats`, []);
-  const { data: alertsData } = useFetch(`${API}/alerts`, []);
-  const alerts = alertsData?.alerts?.slice(0, 8) || [];
-
-  if (loading) return <div className="loading"><div className="spinner"/>LOADING STATS</div>;
-  if (!stats) return <div className="empty"><div className="empty-text">Connect to API at localhost:5000</div></div>;
-
-  const rd = stats.risk_dist || {};
-  const totalRisk = (rd.HIGH||0)+(rd.MEDIUM||0)+(rd.LOW||0) || 1;
-
-  return (
-    <div>
-      {/* KPI row */}
-      <div className="grid-4 mb8">
-        <div className="stat-tile">
-          <div className="stat-label">Total Stays</div>
-          <div className="stat-value accent">{stats.total_stays?.toLocaleString()}</div>
-          <div className="stat-sub">{stats.total_patients?.toLocaleString()} unique patients</div>
-        </div>
-        <div className="stat-tile">
-          <div className="stat-label">Mean Age</div>
-          <div className="stat-value">{stats.mean_age}</div>
-          <div className="stat-sub">years</div>
-        </div>
-        <div className="stat-tile">
-          <div className="stat-label">Mean LOS</div>
-          <div className="stat-value yellow">{(stats.mean_los_hours/24).toFixed(1)}</div>
-          <div className="stat-sub">days ({stats.mean_los_hours?.toFixed(0)} hrs)</div>
-        </div>
-        <div className="stat-tile">
-          <div className="stat-label">Expired</div>
-          <div className="stat-value red">{stats.expire_count?.toLocaleString()}</div>
-          <div className="stat-sub">{stats.total_stays ? ((stats.expire_count/stats.total_stays)*100).toFixed(1) : "—"}% mortality rate</div>
-        </div>
-      </div>
-
-      <div className="chart-row">
-        {/* Risk distribution */}
-        <div className="card">
-          <div className="card-header"><span className="card-title">Risk Distribution</span></div>
-          <div className="card-body">
-            {[["HIGH",rd.HIGH||0,"var(--red)"],["MEDIUM",rd.MEDIUM||0,"var(--orange)"],["LOW",rd.LOW||0,"var(--green)"]].map(([label,val,color]) => (
-              <div key={label} style={{ marginBottom: 10 }}>
-                <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
-                  <span style={{ fontFamily:"var(--mono)", fontSize:10, color }}>{label}</span>
-                  <span style={{ fontFamily:"var(--mono)", fontSize:10, color:"var(--text3)" }}>{val?.toLocaleString()}</span>
-                </div>
-                <div style={{ height:6, background:"var(--border)", borderRadius:3, overflow:"hidden" }}>
-                  <div style={{ height:"100%", width:((val/totalRisk)*100)+"%", background:color, borderRadius:3, transition:"width .5s" }}/>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Care units */}
-        <div className="card">
-          <div className="card-header"><span className="card-title">Care Units</span></div>
-          <div className="card-body">
-            {Object.entries(stats.care_units||{}).slice(0,5).map(([unit,count]) => (
-              <div key={unit} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
-                <span style={{ fontFamily:"var(--mono)", fontSize:10, color:"var(--accent2)", width:120, flexShrink:0 }}>{unit}</span>
-                <div style={{ flex:1, height:4, background:"var(--border)", borderRadius:2, overflow:"hidden" }}>
-                  <div style={{ height:"100%", width:((count/(stats.total_stays||1))*100)+"%", background:"var(--accent2)", borderRadius:2 }}/>
-                </div>
-                <span style={{ fontFamily:"var(--mono)", fontSize:10, color:"var(--text3)", minWidth:36, textAlign:"right" }}>{count}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Alerts */}
-      <div className="card">
-        <div className="card-header">
-          <span className="card-title">Critical Alerts</span>
-          <span style={{ fontFamily:"var(--mono)", fontSize:10, color:"var(--red)" }}>
-            {alerts.length} HIGH RISK
-          </span>
-        </div>
-        <div className="card-body" style={{ maxHeight:280, overflowY:"auto" }}>
-          {alerts.map(a => (
-            <div key={a.icustay_id} className={`alert-item ${a.risk_level==="MEDIUM"?"medium":""}`}>
-              <div className="alert-top">
-                <span className="alert-id">ICU #{a.icustay_id}</span>
-                <span className={`risk-badge risk-${a.risk_level}`}>{fmtScore(a.composite_score)}</span>
-              </div>
-              <div className="alert-diag">{a.diagnosis || "No diagnosis"} · {a.first_careunit || "—"}</div>
-              <div className="alert-triggers">
-                {a.triggered_labels?.map(t => (
-                  <span key={t.label} className="alert-trigger">
-                    {t.label.replace(/_/g," ")} {fmtScore(t.score)}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ))}
-          {alerts.length === 0 && <div className="empty"><div className="empty-text">NO ALERTS</div></div>}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Prediction score display ──────────────────────────────────────────────────
-function PredGroup({ title, labels, scores }) {
-  return (
-    <div className="pred-group">
-      <div className="pred-group-title">{title}</div>
-      <div className="pred-grid">
-        {labels.map(label => {
-          const s = scores?.[label] ?? 0;
-          const color = scoreColor(s);
-          const short = label.replace(/aki_stage/,"S").replace(/hypotension/,"hypo").replace(/vasopressor/,"vaso").replace(/ventilation/,"vent").replace(/mortality/,"mort").replace(/sepsis/,"seps").replace(/los_/,"los-");
-          return (
-            <div className="pred-item" key={label} style={{ borderColor: s > 0.65 ? "rgba(255,59,92,.3)" : undefined }}>
-              <div className="pred-item-label">{short}</div>
-              <div className="pred-item-score" style={{ color }}>{fmtScore(s)}</div>
-              <div className="pred-mini-bar">
-                <div className="pred-mini-fill" style={{ width:(s*100)+"%", background:color }}/>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ── Patient Detail Tab ────────────────────────────────────────────────────────
-function PatientTab({ patient }) {
-  const iid = patient?.icustay_id;
-  const { data: preds }  = useFetch(iid ? `${API}/patients/${iid}/predictions` : null, [iid]);
-  const { data: vitData } = useFetch(iid ? `${API}/patients/${iid}/vitals` : null, [iid]);
-  const { data: labData } = useFetch(iid ? `${API}/patients/${iid}/labs` : null, [iid]);
-
-  if (!patient) return (
-    <div className="empty" style={{ height:300 }}>
-      <div className="empty-icon">⊕</div>
-      <div className="empty-text">SELECT A PATIENT FROM THE LIST</div>
-    </div>
-  );
-
-  const vitals = vitData?.vitals || [];
-  const labs   = labData?.labs   || [];
-
-  const latestVital = vitals[vitals.length - 1] || {};
-
-  const compScore = preds?.composite_score ?? 0;
-  const compColor = riskColor(preds?.risk_level || "LOW");
-
-  const TASK_GROUPS = {
-    "Mortality":       ["mortality_6h","mortality_12h","mortality_24h"],
-    "Sepsis":          ["sepsis_6h","sepsis_12h","sepsis_24h"],
-    "AKI":             ["aki_stage1_24h","aki_stage2_24h","aki_stage3_24h","aki_stage1_48h","aki_stage2_48h","aki_stage3_48h"],
-    "Hypotension":     ["hypotension_1h","hypotension_3h","hypotension_6h"],
-    "Vasopressor":     ["vasopressor_6h","vasopressor_12h"],
-    "Ventilation":     ["ventilation_6h","ventilation_12h","ventilation_24h"],
-    "Length of Stay":  ["los_short_24h","los_long_72h"],
-  };
-
-  const vitalMeta = [
-    { key:"heartrate", label:"Heart Rate", unit:"bpm",  lo:60,  hi:100 },
-    { key:"meanbp",    label:"MAP",         unit:"mmHg", lo:65,  hi:105 },
-    { key:"spo2",      label:"SpO₂",        unit:"%",    lo:94,  hi:101 },
-    { key:"resprate",  label:"Resp Rate",   unit:"/min", lo:12,  hi:20  },
-    { key:"tempc",     label:"Temp",        unit:"°C",   lo:36,  hi:38.3},
-    { key:"glucose",   label:"Glucose",     unit:"mg/dL",lo:70,  hi:180 },
-    { key:"sysbp",     label:"Systolic BP", unit:"mmHg", lo:90,  hi:140 },
-    { key:"diasbp",    label:"Diastolic BP",unit:"mmHg", lo:60,  hi:90  },
-  ];
-
-  return (
-    <div>
-      {/* Patient header */}
-      <div className="pt-header">
-        <div className="pt-id-block">
-          <div className="pt-icustay">ICU #{patient.icustay_id}</div>
-          <div className="pt-sub">SUBJ #{patient.subject_id}</div>
-          <div className="pt-sub">ADM #{patient.hadm_id}</div>
-        </div>
-        <div className="pt-meta">
-          {[
-            ["Age",       patient.age ? Math.round(patient.age)+" yrs" : "—"],
-            ["Gender",    patient.gender === "M" ? "Male" : "Female"],
-            ["Unit",      patient.first_careunit || "—"],
-            ["Admission", patient.admission_type || "—"],
-            ["LOS",       patient.los_hours ? (patient.los_hours/24).toFixed(1)+" days" : "—"],
-            ["Status",    patient.expire_flag ? "Deceased" : "Alive"],
-          ].map(([l,v]) => (
-            <div className="pt-meta-item" key={l}>
-              <div className="pt-meta-label">{l}</div>
-              <div className="pt-meta-val" style={{ color: l==="Status" && patient.expire_flag ? "var(--red)" : undefined }}>{v}</div>
-            </div>
-          ))}
-          {patient.diagnosis && (
-            <div className="pt-meta-item" style={{ maxWidth:250 }}>
-              <div className="pt-meta-label">Diagnosis</div>
-              <div className="pt-meta-val" style={{ fontSize:11, color:"var(--text2)" }}>{patient.diagnosis}</div>
-            </div>
-          )}
-        </div>
-        <div className="composite-circle" style={{ borderColor: compColor }}>
-          <div className="cc-score" style={{ color: compColor }}>{fmtScore(compScore)}</div>
-          <div className="cc-label">COMPOSITE</div>
-          <div className="cc-label" style={{ color: compColor }}>{preds?.risk_level||"—"}</div>
-        </div>
-      </div>
-
-      {/* Current vitals row */}
-      <div className="vital-now">
-        {vitalMeta.slice(0,8).map(vm => {
-          const val = latestVital[vm.key];
-          const abnormal = val !== undefined && (val < vm.lo || val >= vm.hi);
-          return (
-            <div className="vital-card" key={vm.key} style={{ borderColor: abnormal ? "rgba(255,59,92,.4)" : undefined }}>
-              <div className="vc-label">{vm.label}</div>
-              <div className="vc-val" style={{ color: abnormal ? "var(--red)" : "var(--text)" }}>
-                {val !== undefined ? val.toFixed(0) : "—"}
-                <span className="vc-unit">{vm.unit}</span>
-              </div>
-              <div className="vc-status" style={{ color: abnormal ? "var(--red)" : "var(--green)" }}>
-                {val !== undefined ? (abnormal ? "▲ ABNORMAL" : "✓ NORMAL") : "NO DATA"}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Charts row */}
-      <div className="chart-row">
-        <div className="card">
-          <div className="card-header"><span className="card-title">Heart Rate & MAP</span></div>
-          <div className="card-body" style={{ padding:"8px 4px 4px" }}>
-            <div className="chart-wrap">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={vitals.filter((_,i)=>i%2===0)} margin={{top:4,right:8,bottom:0,left:-20}}>
-                  <XAxis dataKey="charttime" tickFormatter={fmtTime} tick={{fontSize:9,fill:"var(--text3)"}} interval={Math.floor(vitals.length/6)} />
-                  <YAxis tick={{fontSize:9,fill:"var(--text3)"}} />
-                  <Tooltip contentStyle={{background:"var(--panel)",border:"1px solid var(--border)",fontSize:10}} labelFormatter={fmtTime}/>
-                  <ReferenceLine y={90} stroke="rgba(255,59,92,.3)" strokeDasharray="3 3"/>
-                  <Line type="monotone" dataKey="heartrate" stroke="var(--red)" dot={false} strokeWidth={1.5} name="HR"/>
-                  <Line type="monotone" dataKey="meanbp" stroke="var(--accent)" dot={false} strokeWidth={1.5} name="MAP"/>
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card-header"><span className="card-title">SpO₂ & Resp Rate</span></div>
-          <div className="card-body" style={{ padding:"8px 4px 4px" }}>
-            <div className="chart-wrap">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={vitals.filter((_,i)=>i%2===0)} margin={{top:4,right:8,bottom:0,left:-20}}>
-                  <XAxis dataKey="charttime" tickFormatter={fmtTime} tick={{fontSize:9,fill:"var(--text3)"}} interval={Math.floor(vitals.length/6)}/>
-                  <YAxis tick={{fontSize:9,fill:"var(--text3)"}}/>
-                  <Tooltip contentStyle={{background:"var(--panel)",border:"1px solid var(--border)",fontSize:10}} labelFormatter={fmtTime}/>
-                  <ReferenceLine y={94} stroke="rgba(255,59,92,.3)" strokeDasharray="3 3"/>
-                  <Line type="monotone" dataKey="spo2" stroke="var(--green)" dot={false} strokeWidth={1.5} name="SpO2"/>
-                  <Line type="monotone" dataKey="resprate" stroke="var(--yellow)" dot={false} strokeWidth={1.5} name="RR"/>
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Lab trends */}
-      <div className="chart-row">
-        <div className="card">
-          <div className="card-header"><span className="card-title">Creatinine & Lactate</span></div>
-          <div className="card-body" style={{ padding:"8px 4px 4px" }}>
-            <div className="chart-wrap">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={labs} margin={{top:4,right:8,bottom:0,left:-20}}>
-                  <XAxis dataKey="charttime" tickFormatter={fmtTime} tick={{fontSize:9,fill:"var(--text3)"}} interval={Math.floor(labs.length/4)}/>
-                  <YAxis tick={{fontSize:9,fill:"var(--text3)"}}/>
-                  <Tooltip contentStyle={{background:"var(--panel)",border:"1px solid var(--border)",fontSize:10}} labelFormatter={fmtTime}/>
-                  <Line type="monotone" dataKey="creatinine" stroke="var(--orange)" dot={true} strokeWidth={1.5} name="Creatinine"/>
-                  <Line type="monotone" dataKey="lactate"    stroke="var(--red)"    dot={true} strokeWidth={1.5} name="Lactate"/>
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card-header"><span className="card-title">WBC & Hemoglobin</span></div>
-          <div className="card-body" style={{ padding:"8px 4px 4px" }}>
-            <div className="chart-wrap">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={labs} margin={{top:4,right:8,bottom:0,left:-20}}>
-                  <XAxis dataKey="charttime" tickFormatter={fmtTime} tick={{fontSize:9,fill:"var(--text3)"}} interval={Math.floor(labs.length/4)}/>
-                  <YAxis tick={{fontSize:9,fill:"var(--text3)"}}/>
-                  <Tooltip contentStyle={{background:"var(--panel)",border:"1px solid var(--border)",fontSize:10}} labelFormatter={fmtTime}/>
-                  <Line type="monotone" dataKey="wbc"        stroke="var(--accent)" dot={true} strokeWidth={1.5} name="WBC"/>
-                  <Line type="monotone" dataKey="hemoglobin" stroke="var(--yellow)" dot={true} strokeWidth={1.5} name="Hgb"/>
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Prediction scores */}
-      <div className="card section">
-        <div className="card-header">
-          <span className="card-title">All 22 Prediction Scores</span>
-          <span style={{ fontFamily:"var(--mono)", fontSize:9, color:"var(--text3)" }}>
-            UPDATED {preds?.updated_at ? new Date(preds.updated_at).toLocaleTimeString() : "—"}
-          </span>
-        </div>
-        <div className="card-body" style={{ maxHeight:420, overflowY:"auto" }}>
-          {preds
-            ? Object.entries(TASK_GROUPS).map(([title, labels]) => (
-                <PredGroup key={title} title={title} labels={labels} scores={preds.scores} />
-              ))
-            : <div className="loading"><div className="spinner"/>LOADING PREDICTIONS</div>
-          }
-        </div>
-      </div>
-
-      {/* SHAP */}
-      <div className="card section">
-        <div className="card-header"><span className="card-title">Readmission Risk · SHAP Feature Importance</span></div>
-        <div className="card-body">
-          {preds?.shap_features?.map((f, i) => {
-            const max = preds.shap_features[0]?.value || 1;
+        // ── Live Clock ────────────────────────────────────────────────────────────────
+        function Clock() {
+            const [t, setT] = useState(new Date());
+            useEffect(() => { const id = setInterval(() => setT(new Date()), 1000); return () => clearInterval(id); }, []);
             return (
-              <div className="shap-row" key={f.feature}>
-                <span className="shap-feature">{f.feature}</span>
-                <div className="shap-bar-wrap">
-                  <div className="shap-bar">
-                    <div className="shap-bar-fill" style={{ width:((f.value/max)*100)+"%" }}/>
-                  </div>
-                </div>
-                <span className="shap-val">{f.value.toFixed(3)}</span>
-              </div>
+                <span className="header-time">
+                    {t.toLocaleDateString("en-GB")} &nbsp; {t.toLocaleTimeString("en-GB")}
+                </span>
             );
-          })}
-          {!preds && <div className="loading"><div className="spinner"/>LOADING</div>}
-        </div>
-      </div>
-    </div>
-  );
-}
+        }
 
-// ── Alerts Tab ────────────────────────────────────────────────────────────────
-function AlertsTab({ onSelectPatient }) {
-  const { data, loading } = useFetch(`${API}/alerts`, []);
-  const alerts = data?.alerts || [];
+        // ── Patient List Item ─────────────────────────────────────────────────────────
+        function PatientItem({ p, selected, onClick }) {
+            return (
+                <div className={`patient-item ${selected ? "selected" : ""}`} onClick={onClick}>
+                    <div className="pi-top">
+                        <span className="pi-id">#{p.icustay_id}</span>
+                        <span className={`risk-badge risk-${p.risk_level}`}>{p.risk_level}</span>
+                    </div>
+                    <div className="pi-name">
+                        {p.gender === "M" ? "♂" : "♀"} · {p.age ? Math.round(p.age) + " yrs" : "—"} ·{" "}
+                        <span style={{ color: "var(--text3)" }}>{p.first_careunit || "—"}</span>
+                    </div>
+                    <div className="pi-diag">{p.diagnosis || "No diagnosis recorded"}</div>
+                    <div className="score-bar-wrap" style={{ marginTop: 4 }}>
+                        <div className="score-bar">
+                            <div className="score-bar-fill" style={{
+                                width: (p.composite_score * 100) + "%",
+                                background: riskColor(p.risk_level)
+                            }} />
+                        </div>
+                        <span className="score-val">{fmtScore(p.composite_score)}</span>
+                    </div>
+                </div>
+            );
+        }
 
-  return (
-    <div>
-      <div className="card-header" style={{ background:"var(--bg3)", border:"1px solid var(--border)", borderRadius:6, marginBottom:12, padding:"10px 14px" }}>
-        <span className="card-title">Active Critical Alerts</span>
-        <span style={{ fontFamily:"var(--mono)", fontSize:10, color:"var(--red)" }}>
-          {alerts.filter(a=>a.risk_level==="HIGH").length} HIGH · {alerts.filter(a=>a.risk_level==="MEDIUM").length} MEDIUM
-        </span>
-      </div>
-      {loading && <div className="loading"><div className="spinner"/>SCANNING</div>}
-      {alerts.map(a => (
-        <div
-          key={a.icustay_id}
-          className={`alert-item ${a.risk_level==="MEDIUM"?"medium":""}`}
-          style={{ cursor:"pointer" }}
-          onClick={() => onSelectPatient(a)}
-        >
-          <div className="alert-top">
-            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-              <span className="alert-id">ICU #{a.icustay_id}</span>
-              <span className="unit-pill">{a.first_careunit || "—"}</span>
-              <span style={{ fontFamily:"var(--mono)", fontSize:10, color:"var(--text3)" }}>
-                {a.gender} · {a.age ? Math.round(a.age)+"yr" : "—"}
-              </span>
-            </div>
-            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-              <span className={`risk-badge risk-${a.risk_level}`}>{fmtScore(a.composite_score)}</span>
-            </div>
-          </div>
-          <div className="alert-diag">{a.diagnosis || "No diagnosis recorded"}</div>
-          <div className="alert-triggers">
-            {a.triggered_labels?.map(t => (
-              <span key={t.label} className="alert-trigger">
-                {t.label.replace(/_/g," ").toUpperCase()} · {fmtScore(t.score)}
-              </span>
-            ))}
-          </div>
-        </div>
-      ))}
-      {!loading && alerts.length === 0 && (
-        <div className="empty"><div className="empty-icon">◎</div><div className="empty-text">NO ACTIVE ALERTS</div></div>
-      )}
-    </div>
-  );
-}
+        // ── Sidebar ───────────────────────────────────────────────────────────────────
+        function Sidebar({ selected, onSelect }) {
+            const [q, setQ] = useState("");
+            const [risk, setRisk] = useState("");
+            const [page, setPage] = useState(1);
 
-// ── App ───────────────────────────────────────────────────────────────────────
-function App() {
-  const [tab, setTab] = useState("overview");
-  const [selectedPatient, setSelectedPatient] = useState(null);
+            const url = `${API}/patients?q=${encodeURIComponent(q)}&risk=${risk}&page=${page}&per_page=18`;
+            const { data, loading } = useFetch(url, [q, risk, page]);
 
-  const handleSelectPatient = (p) => {
-    setSelectedPatient(p);
-    setTab("patient");
-  };
+            const patients = data?.patients || [];
+            const pages = data?.pages || 1;
 
-  const tabs = [
-    { id:"overview", label:"Overview" },
-    { id:"patient",  label: selectedPatient ? `Patient #${selectedPatient.icustay_id}` : "Patient Detail" },
-    { id:"alerts",   label:"Alerts" },
-  ];
+            return (
+                <div className="sidebar">
+                    <div className="sidebar-search">
+                        <input
+                            className="search-input"
+                            placeholder="Search ID, diagnosis, unit…"
+                            value={q}
+                            onChange={e => { setQ(e.target.value); setPage(1); }}
+                        />
+                        <div className="filter-row">
+                            {["HIGH", "MEDIUM", "LOW"].map(r => (
+                                <button
+                                    key={r}
+                                    className={`filter-btn ${risk === r ? "active-" + r.toLowerCase() : ""}`}
+                                    onClick={() => { setRisk(risk === r ? "" : r); setPage(1); }}
+                                >{r}</button>
+                            ))}
+                        </div>
+                    </div>
 
-  return (
-    <div className="app">
-      <div className="header">
-        <div className="header-logo">Smart<span>/</span>ICU</div>
-        <div className="header-dot"/>
-        <span style={{ fontFamily:"var(--mono)", fontSize:10, color:"var(--text3)", letterSpacing:1 }}>
-          MIMIC-III · DECISION SUPPORT SYSTEM
-        </span>
-        <Clock />
-      </div>
+                    <div className="patient-list">
+                        {loading && <div className="loading"><div className="spinner" />LOADING</div>}
+                        {!loading && patients.map(p => (
+                            <PatientItem
+                                key={p.icustay_id}
+                                p={p}
+                                selected={selected?.icustay_id === p.icustay_id}
+                                onClick={() => onSelect(p)}
+                            />
+                        ))}
+                        {!loading && patients.length === 0 && (
+                            <div className="empty">
+                                <div className="empty-icon">◎</div>
+                                <div className="empty-text">NO PATIENTS FOUND</div>
+                            </div>
+                        )}
+                    </div>
 
-      <div className="tabs">
-        {tabs.map(t => (
-          <button key={t.id} className={`tab ${tab===t.id?"active":""}`} onClick={()=>setTab(t.id)}>
-            {t.label}
-          </button>
-        ))}
-      </div>
+                    {pages > 1 && (
+                        <div className="pagination">
+                            <button className="page-btn" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>‹</button>
+                            <span className="page-info">{page} / {pages}</span>
+                            <button className="page-btn" onClick={() => setPage(p => Math.min(pages, p + 1))} disabled={page === pages}>›</button>
+                        </div>
+                    )}
+                </div>
+            );
+        }
 
-      <div className="main">
-        <Sidebar selected={selectedPatient} onSelect={handleSelectPatient} />
-        <div className="content">
-          <div className="content-scroll">
-            {tab === "overview" && <OverviewTab />}
-            {tab === "patient"  && <PatientTab patient={selectedPatient} />}
-            {tab === "alerts"   && <AlertsTab onSelectPatient={handleSelectPatient} />}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+        // ── Overview Tab ─────────────────────────────────────────────────────────────
+        function OverviewTab() {
+            const { data: stats, loading } = useFetch(`${API}/stats`, []);
+            const { data: alertsData } = useFetch(`${API}/alerts`, []);
+            const alerts = alertsData?.alerts?.slice(0, 8) || [];
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
-</script>
+            if (loading) return <div className="loading"><div className="spinner" />LOADING STATS</div>;
+            if (!stats) return <div className="empty"><div className="empty-text">Connect to API at localhost:5000</div></div>;
+
+            const rd = stats.risk_dist || {};
+            const totalRisk = (rd.HIGH || 0) + (rd.MEDIUM || 0) + (rd.LOW || 0) || 1;
+
+            return (
+                <div>
+                    {/* KPI row */}
+                    <div className="grid-4 mb8">
+                        <div className="stat-tile">
+                            <div className="stat-label">Total Stays</div>
+                            <div className="stat-value accent">{stats.total_stays?.toLocaleString()}</div>
+                            <div className="stat-sub">{stats.total_patients?.toLocaleString()} unique patients</div>
+                        </div>
+                        <div className="stat-tile">
+                            <div className="stat-label">Mean Age</div>
+                            <div className="stat-value">{stats.mean_age}</div>
+                            <div className="stat-sub">years</div>
+                        </div>
+                        <div className="stat-tile">
+                            <div className="stat-label">Mean LOS</div>
+                            <div className="stat-value yellow">{(stats.mean_los_hours / 24).toFixed(1)}</div>
+                            <div className="stat-sub">days ({stats.mean_los_hours?.toFixed(0)} hrs)</div>
+                        </div>
+                        <div className="stat-tile">
+                            <div className="stat-label">Expired</div>
+                            <div className="stat-value red">{stats.expire_count?.toLocaleString()}</div>
+                            <div className="stat-sub">{stats.total_stays ? ((stats.expire_count / stats.total_stays) * 100).toFixed(1) : "—"}% mortality rate</div>
+                        </div>
+                    </div>
+
+                    <div className="chart-row">
+                        {/* Risk distribution */}
+                        <div className="card">
+                            <div className="card-header"><span className="card-title">Risk Distribution</span></div>
+                            <div className="card-body">
+                                {[["HIGH", rd.HIGH || 0, "var(--red)"], ["MEDIUM", rd.MEDIUM || 0, "var(--orange)"], ["LOW", rd.LOW || 0, "var(--green)"]].map(([label, val, color]) => (
+                                    <div key={label} style={{ marginBottom: 10 }}>
+                                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                                            <span style={{ fontFamily: "var(--mono)", fontSize: 10, color }}>{label}</span>
+                                            <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--text3)" }}>{val?.toLocaleString()}</span>
+                                        </div>
+                                        <div style={{ height: 6, background: "var(--border)", borderRadius: 3, overflow: "hidden" }}>
+                                            <div style={{ height: "100%", width: ((val / totalRisk) * 100) + "%", background: color, borderRadius: 3, transition: "width .5s" }} />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Care units */}
+                        <div className="card">
+                            <div className="card-header"><span className="card-title">Care Units</span></div>
+                            <div className="card-body">
+                                {Object.entries(stats.care_units || {}).slice(0, 5).map(([unit, count]) => (
+                                    <div key={unit} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                                        <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--accent2)", width: 120, flexShrink: 0 }}>{unit}</span>
+                                        <div style={{ flex: 1, height: 4, background: "var(--border)", borderRadius: 2, overflow: "hidden" }}>
+                                            <div style={{ height: "100%", width: ((count / (stats.total_stays || 1)) * 100) + "%", background: "var(--accent2)", borderRadius: 2 }} />
+                                        </div>
+                                        <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--text3)", minWidth: 36, textAlign: "right" }}>{count}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Alerts */}
+                    <div className="card">
+                        <div className="card-header">
+                            <span className="card-title">Critical Alerts</span>
+                            <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--red)" }}>
+                                {alerts.length} HIGH RISK
+                            </span>
+                        </div>
+                        <div className="card-body" style={{ maxHeight: 280, overflowY: "auto" }}>
+                            {alerts.map(a => (
+                                <div key={a.icustay_id} className={`alert-item ${a.risk_level === "MEDIUM" ? "medium" : ""}`}>
+                                    <div className="alert-top">
+                                        <span className="alert-id">ICU #{a.icustay_id}</span>
+                                        <span className={`risk-badge risk-${a.risk_level}`}>{fmtScore(a.composite_score)}</span>
+                                    </div>
+                                    <div className="alert-diag">{a.diagnosis || "No diagnosis"} · {a.first_careunit || "—"}</div>
+                                    <div className="alert-triggers">
+                                        {a.triggered_labels?.map(t => (
+                                            <span key={t.label} className="alert-trigger">
+                                                {t.label.replace(/_/g, " ")} {fmtScore(t.score)}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                            {alerts.length === 0 && <div className="empty"><div className="empty-text">NO ALERTS</div></div>}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ── Prediction score display ──────────────────────────────────────────────────
+        function PredGroup({ title, labels, scores }) {
+            return (
+                <div className="pred-group">
+                    <div className="pred-group-title">{title}</div>
+                    <div className="pred-grid">
+                        {labels.map(label => {
+                            const s = scores?.[label] ?? 0;
+                            const color = scoreColor(s);
+                            const short = label.replace(/aki_stage/, "S").replace(/hypotension/, "hypo").replace(/vasopressor/, "vaso").replace(/ventilation/, "vent").replace(/mortality/, "mort").replace(/sepsis/, "seps").replace(/los_/, "los-");
+                            return (
+                                <div className="pred-item" key={label} style={{ borderColor: s > 0.65 ? "rgba(255,59,92,.3)" : undefined }}>
+                                    <div className="pred-item-label">{short}</div>
+                                    <div className="pred-item-score" style={{ color }}>{fmtScore(s)}</div>
+                                    <div className="pred-mini-bar">
+                                        <div className="pred-mini-fill" style={{ width: (s * 100) + "%", background: color }} />
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        }
+
+        // ── Patient Detail Tab ────────────────────────────────────────────────────────
+        function PatientTab({ patient }) {
+            const iid = patient?.icustay_id;
+            const { data: preds } = useFetch(iid ? `${API}/patients/${iid}/predictions` : null, [iid]);
+            const { data: vitData } = useFetch(iid ? `${API}/patients/${iid}/vitals` : null, [iid]);
+            const { data: labData } = useFetch(iid ? `${API}/patients/${iid}/labs` : null, [iid]);
+
+            if (!patient) return (
+                <div className="empty" style={{ height: 300 }}>
+                    <div className="empty-icon">⊕</div>
+                    <div className="empty-text">SELECT A PATIENT FROM THE LIST</div>
+                </div>
+            );
+
+            const vitals = vitData?.vitals || [];
+            const labs = labData?.labs || [];
+
+            const latestVital = vitals[vitals.length - 1] || {};
+
+            const compScore = preds?.composite_score ?? 0;
+            const compColor = riskColor(preds?.risk_level || "LOW");
+
+            const TASK_GROUPS = {
+                "Mortality": ["mortality_6h", "mortality_12h", "mortality_24h"],
+                "Sepsis": ["sepsis_6h", "sepsis_12h", "sepsis_24h"],
+                "AKI": ["aki_stage1_24h", "aki_stage2_24h", "aki_stage3_24h", "aki_stage1_48h", "aki_stage2_48h", "aki_stage3_48h"],
+                "Hypotension": ["hypotension_1h", "hypotension_3h", "hypotension_6h"],
+                "Vasopressor": ["vasopressor_6h", "vasopressor_12h"],
+                "Ventilation": ["ventilation_6h", "ventilation_12h", "ventilation_24h"],
+                "Length of Stay": ["los_short_24h", "los_long_72h"],
+            };
+
+            const vitalMeta = [
+                { key: "heartrate", label: "Heart Rate", unit: "bpm", lo: 60, hi: 100 },
+                { key: "meanbp", label: "MAP", unit: "mmHg", lo: 65, hi: 105 },
+                { key: "spo2", label: "SpO₂", unit: "%", lo: 94, hi: 101 },
+                { key: "resprate", label: "Resp Rate", unit: "/min", lo: 12, hi: 20 },
+                { key: "tempc", label: "Temp", unit: "°C", lo: 36, hi: 38.3 },
+                { key: "glucose", label: "Glucose", unit: "mg/dL", lo: 70, hi: 180 },
+                { key: "sysbp", label: "Systolic BP", unit: "mmHg", lo: 90, hi: 140 },
+                { key: "diasbp", label: "Diastolic BP", unit: "mmHg", lo: 60, hi: 90 },
+            ];
+
+            return (
+                <div>
+                    {/* Patient header */}
+                    <div className="pt-header">
+                        <div className="pt-id-block">
+                            <div className="pt-icustay">ICU #{patient.icustay_id}</div>
+                            <div className="pt-sub">SUBJ #{patient.subject_id}</div>
+                            <div className="pt-sub">ADM #{patient.hadm_id}</div>
+                        </div>
+                        <div className="pt-meta">
+                            {[
+                                ["Age", patient.age ? Math.round(patient.age) + " yrs" : "—"],
+                                ["Gender", patient.gender === "M" ? "Male" : "Female"],
+                                ["Unit", patient.first_careunit || "—"],
+                                ["Admission", patient.admission_type || "—"],
+                                ["LOS", patient.los_hours ? (patient.los_hours / 24).toFixed(1) + " days" : "—"],
+                                ["Status", patient.expire_flag ? "Deceased" : "Alive"],
+                            ].map(([l, v]) => (
+                                <div className="pt-meta-item" key={l}>
+                                    <div className="pt-meta-label">{l}</div>
+                                    <div className="pt-meta-val" style={{ color: l === "Status" && patient.expire_flag ? "var(--red)" : undefined }}>{v}</div>
+                                </div>
+                            ))}
+                            {patient.diagnosis && (
+                                <div className="pt-meta-item" style={{ maxWidth: 250 }}>
+                                    <div className="pt-meta-label">Diagnosis</div>
+                                    <div className="pt-meta-val" style={{ fontSize: 11, color: "var(--text2)" }}>{patient.diagnosis}</div>
+                                </div>
+                            )}
+                        </div>
+                        <div className="composite-circle" style={{ borderColor: compColor }}>
+                            <div className="cc-score" style={{ color: compColor }}>{fmtScore(compScore)}</div>
+                            <div className="cc-label">COMPOSITE</div>
+                            <div className="cc-label" style={{ color: compColor }}>{preds?.risk_level || "—"}</div>
+                        </div>
+                    </div>
+
+                    {/* Current vitals row */}
+                    <div className="vital-now">
+                        {vitalMeta.slice(0, 8).map(vm => {
+                            const val = latestVital[vm.key];
+                            const abnormal = val !== undefined && (val < vm.lo || val >= vm.hi);
+                            return (
+                                <div className="vital-card" key={vm.key} style={{ borderColor: abnormal ? "rgba(255,59,92,.4)" : undefined }}>
+                                    <div className="vc-label">{vm.label}</div>
+                                    <div className="vc-val" style={{ color: abnormal ? "var(--red)" : "var(--text)" }}>
+                                        {val !== undefined ? val.toFixed(0) : "—"}
+                                        <span className="vc-unit">{vm.unit}</span>
+                                    </div>
+                                    <div className="vc-status" style={{ color: abnormal ? "var(--red)" : "var(--green)" }}>
+                                        {val !== undefined ? (abnormal ? "▲ ABNORMAL" : "✓ NORMAL") : "NO DATA"}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* Charts row */}
+                    <div className="chart-row">
+                        <div className="card">
+                            <div className="card-header"><span className="card-title">Heart Rate & MAP</span></div>
+                            <div className="card-body" style={{ padding: "8px 4px 4px" }}>
+                                <div className="chart-wrap">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={vitals.filter((_, i) => i % 2 === 0)} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
+                                            <XAxis dataKey="charttime" tickFormatter={fmtTime} tick={{ fontSize: 9, fill: "var(--text3)" }} interval={Math.floor(vitals.length / 6)} />
+                                            <YAxis tick={{ fontSize: 9, fill: "var(--text3)" }} />
+                                            <Tooltip contentStyle={{ background: "var(--panel)", border: "1px solid var(--border)", fontSize: 10 }} labelFormatter={fmtTime} />
+                                            <ReferenceLine y={90} stroke="rgba(255,59,92,.3)" strokeDasharray="3 3" />
+                                            <Line type="monotone" dataKey="heartrate" stroke="var(--red)" dot={false} strokeWidth={1.5} name="HR" />
+                                            <Line type="monotone" dataKey="meanbp" stroke="var(--accent)" dot={false} strokeWidth={1.5} name="MAP" />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="card">
+                            <div className="card-header"><span className="card-title">SpO₂ & Resp Rate</span></div>
+                            <div className="card-body" style={{ padding: "8px 4px 4px" }}>
+                                <div className="chart-wrap">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={vitals.filter((_, i) => i % 2 === 0)} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
+                                            <XAxis dataKey="charttime" tickFormatter={fmtTime} tick={{ fontSize: 9, fill: "var(--text3)" }} interval={Math.floor(vitals.length / 6)} />
+                                            <YAxis tick={{ fontSize: 9, fill: "var(--text3)" }} />
+                                            <Tooltip contentStyle={{ background: "var(--panel)", border: "1px solid var(--border)", fontSize: 10 }} labelFormatter={fmtTime} />
+                                            <ReferenceLine y={94} stroke="rgba(255,59,92,.3)" strokeDasharray="3 3" />
+                                            <Line type="monotone" dataKey="spo2" stroke="var(--green)" dot={false} strokeWidth={1.5} name="SpO2" />
+                                            <Line type="monotone" dataKey="resprate" stroke="var(--yellow)" dot={false} strokeWidth={1.5} name="RR" />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Lab trends */}
+                    <div className="chart-row">
+                        <div className="card">
+                            <div className="card-header"><span className="card-title">Creatinine & Lactate</span></div>
+                            <div className="card-body" style={{ padding: "8px 4px 4px" }}>
+                                <div className="chart-wrap">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={labs} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
+                                            <XAxis dataKey="charttime" tickFormatter={fmtTime} tick={{ fontSize: 9, fill: "var(--text3)" }} interval={Math.floor(labs.length / 4)} />
+                                            <YAxis tick={{ fontSize: 9, fill: "var(--text3)" }} />
+                                            <Tooltip contentStyle={{ background: "var(--panel)", border: "1px solid var(--border)", fontSize: 10 }} labelFormatter={fmtTime} />
+                                            <Line type="monotone" dataKey="creatinine" stroke="var(--orange)" dot={true} strokeWidth={1.5} name="Creatinine" />
+                                            <Line type="monotone" dataKey="lactate" stroke="var(--red)" dot={true} strokeWidth={1.5} name="Lactate" />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="card">
+                            <div className="card-header"><span className="card-title">WBC & Hemoglobin</span></div>
+                            <div className="card-body" style={{ padding: "8px 4px 4px" }}>
+                                <div className="chart-wrap">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={labs} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
+                                            <XAxis dataKey="charttime" tickFormatter={fmtTime} tick={{ fontSize: 9, fill: "var(--text3)" }} interval={Math.floor(labs.length / 4)} />
+                                            <YAxis tick={{ fontSize: 9, fill: "var(--text3)" }} />
+                                            <Tooltip contentStyle={{ background: "var(--panel)", border: "1px solid var(--border)", fontSize: 10 }} labelFormatter={fmtTime} />
+                                            <Line type="monotone" dataKey="wbc" stroke="var(--accent)" dot={true} strokeWidth={1.5} name="WBC" />
+                                            <Line type="monotone" dataKey="hemoglobin" stroke="var(--yellow)" dot={true} strokeWidth={1.5} name="Hgb" />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Prediction scores */}
+                    <div className="card section">
+                        <div className="card-header">
+                            <span className="card-title">All 22 Prediction Scores</span>
+                            <span style={{ fontFamily: "var(--mono)", fontSize: 9, color: "var(--text3)" }}>
+                                UPDATED {preds?.updated_at ? new Date(preds.updated_at).toLocaleTimeString() : "—"}
+                            </span>
+                        </div>
+                        <div className="card-body" style={{ maxHeight: 420, overflowY: "auto" }}>
+                            {preds
+                                ? Object.entries(TASK_GROUPS).map(([title, labels]) => (
+                                    <PredGroup key={title} title={title} labels={labels} scores={preds.scores} />
+                                ))
+                                : <div className="loading"><div className="spinner" />LOADING PREDICTIONS</div>
+                            }
+                        </div>
+                    </div>
+
+                    {/* SHAP */}
+                    <div className="card section">
+                        <div className="card-header"><span className="card-title">Readmission Risk · SHAP Feature Importance</span></div>
+                        <div className="card-body">
+                            {preds?.shap_features?.map((f, i) => {
+                                const max = preds.shap_features[0]?.value || 1;
+                                return (
+                                    <div className="shap-row" key={f.feature}>
+                                        <span className="shap-feature">{f.feature}</span>
+                                        <div className="shap-bar-wrap">
+                                            <div className="shap-bar">
+                                                <div className="shap-bar-fill" style={{ width: ((f.value / max) * 100) + "%" }} />
+                                            </div>
+                                        </div>
+                                        <span className="shap-val">{f.value.toFixed(3)}</span>
+                                    </div>
+                                );
+                            })}
+                            {!preds && <div className="loading"><div className="spinner" />LOADING</div>}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ── Alerts Tab ────────────────────────────────────────────────────────────────
+        function AlertsTab({ onSelectPatient }) {
+            const { data, loading } = useFetch(`${API}/alerts`, []);
+            const alerts = data?.alerts || [];
+
+            return (
+                <div>
+                    <div className="card-header" style={{ background: "var(--bg3)", border: "1px solid var(--border)", borderRadius: 6, marginBottom: 12, padding: "10px 14px" }}>
+                        <span className="card-title">Active Critical Alerts</span>
+                        <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--red)" }}>
+                            {alerts.filter(a => a.risk_level === "HIGH").length} HIGH · {alerts.filter(a => a.risk_level === "MEDIUM").length} MEDIUM
+                        </span>
+                    </div>
+                    {loading && <div className="loading"><div className="spinner" />SCANNING</div>}
+                    {alerts.map(a => (
+                        <div
+                            key={a.icustay_id}
+                            className={`alert-item ${a.risk_level === "MEDIUM" ? "medium" : ""}`}
+                            style={{ cursor: "pointer" }}
+                            onClick={() => onSelectPatient(a)}
+                        >
+                            <div className="alert-top">
+                                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                    <span className="alert-id">ICU #{a.icustay_id}</span>
+                                    <span className="unit-pill">{a.first_careunit || "—"}</span>
+                                    <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--text3)" }}>
+                                        {a.gender} · {a.age ? Math.round(a.age) + "yr" : "—"}
+                                    </span>
+                                </div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                    <span className={`risk-badge risk-${a.risk_level}`}>{fmtScore(a.composite_score)}</span>
+                                </div>
+                            </div>
+                            <div className="alert-diag">{a.diagnosis || "No diagnosis recorded"}</div>
+                            <div className="alert-triggers">
+                                {a.triggered_labels?.map(t => (
+                                    <span key={t.label} className="alert-trigger">
+                                        {t.label.replace(/_/g, " ").toUpperCase()} · {fmtScore(t.score)}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                    {!loading && alerts.length === 0 && (
+                        <div className="empty"><div className="empty-icon">◎</div><div className="empty-text">NO ACTIVE ALERTS</div></div>
+                    )}
+                </div>
+            );
+        }
+
+        // ── App ───────────────────────────────────────────────────────────────────────
+        function App() {
+            const [tab, setTab] = useState("overview");
+            const [selectedPatient, setSelectedPatient] = useState(null);
+
+            const handleSelectPatient = (p) => {
+                setSelectedPatient(p);
+                setTab("patient");
+            };
+
+            const tabs = [
+                { id: "overview", label: "Overview" },
+                { id: "patient", label: selectedPatient ? `Patient #${selectedPatient.icustay_id}` : "Patient Detail" },
+                { id: "alerts", label: "Alerts" },
+            ];
+
+            return (
+                <div className="app">
+                    <div className="header">
+                        <div className="header-logo">Smart<span>/</span>ICU</div>
+                        <div className="header-dot" />
+                        <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--text3)", letterSpacing: 1 }}>
+                            MIMIC-III · DECISION SUPPORT SYSTEM
+                        </span>
+                        <Clock />
+                    </div>
+
+                    <div className="tabs">
+                        {tabs.map(t => (
+                            <button key={t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>
+                                {t.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="main">
+                        <Sidebar selected={selectedPatient} onSelect={handleSelectPatient} />
+                        <div className="content">
+                            <div className="content-scroll">
+                                {tab === "overview" && <OverviewTab />}
+                                {tab === "patient" && <PatientTab patient={selectedPatient} />}
+                                {tab === "alerts" && <AlertsTab onSelectPatient={handleSelectPatient} />}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    </script>
 </body>
+
 </html>
