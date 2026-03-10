@@ -60,6 +60,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Serve local JS dependencies (React, Recharts, Babel) — no CDN required
+STATIC_DIR = os.path.join(PROJECT_ROOT, "static")
+if os.path.isdir(STATIC_DIR):
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
 # ── Config ────────────────────────────────────────────────────────────────────
 DATA_DIR    = os.environ.get("MIMIC_DATA_DIR",  os.path.join(PROJECT_ROOT, "data"))
 OUTPUT_DIR  = os.environ.get("ICU_OUTPUT_DIR",  os.path.join(PROJECT_ROOT, "output"))
@@ -753,20 +758,29 @@ async def health():
     }
 
 
+_stats_cache = {"data": None, "ts": 0}
+
 @app.get("/api/stats")
 async def stats():
+    import time
+    now = time.time()
+    # Cache stats for 60 seconds to avoid recalculating predictions
+    if _stats_cache["data"] and (now - _stats_cache["ts"]) < 60:
+        return _stats_cache["data"]
+
     df = cached("patients", _load_patients)
     if df is None:
         raise HTTPException(503, "data unavailable")
 
-    sample = df.sample(min(500, len(df)), random_state=42)
+    # Smaller sample = faster response (200 instead of 500)
+    sample = df.sample(min(200, len(df)), random_state=42)
     risk_counts = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
     for _, r in sample.iterrows():
         p = _get_predictions(int(r["icustay_id"]))
         risk_counts[p["risk_level"]] += 1
     scale = len(df) / max(len(sample), 1)
 
-    return {
+    result = {
         "total_stays":     int(len(df)),
         "total_patients":  int(df["subject_id"].nunique()),
         "mean_age":        round(float(df["age"].mean()), 1),
@@ -781,6 +795,10 @@ async def stats():
         "risk_dist":       {k: int(v * scale) for k, v in risk_counts.items()},
         "models_source":   "trained" if _model_registry else "fallback",
     }
+
+    _stats_cache["data"] = result
+    _stats_cache["ts"] = now
+    return result
 
 
 @app.get("/api/patients")

@@ -11,13 +11,17 @@ xgboost>=2.0.0
 torch>=2.0.0
 torchvision>=0.15.0
 
+# Web API
+fastapi>=0.100.0
+uvicorn>=0.23.0
+
+# Interpretability
+shap>=0.43.0
+
 # Configuration & Utilities
 pyyaml>=6.0
 python-dateutil>=2.8.0
 tqdm>=4.65.0
-
-# Medical/Clinical Data
-# (MIMIC-III specific - optional)
 
 # Visualization & Monitoring
 matplotlib>=3.7.0

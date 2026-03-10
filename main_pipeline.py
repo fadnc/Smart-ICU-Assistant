@@ -190,8 +190,21 @@ class SmartICUPipeline:
                 logger.info(f"  Processed {idx+1}/{len(stays)} stays, "
                            f"{len(all_sequences)} sequences collected")
 
-        X = np.array(all_sequences)
+        if all_sequences:
+            feature_sizes = [seq.shape[1] for seq in all_sequences]
+            target_features = max(feature_sizes)
+            padded_sequences = []
+            for seq in all_sequences:
+                if seq.shape[1] < target_features:
+                    pad = np.zeros((seq.shape[0], target_features - seq.shape[1]), dtype=seq.dtype)
+                    seq = np.concatenate([seq, pad], axis=1)
+                padded_sequences.append(seq)
+            X = np.array(padded_sequences)
+        else:
+            X = np.array([])
         y = np.array(all_labels)
+        input_size = X.shape[2] if len(X) > 0 else 0
+        logger.info(f"  Padded all sequences to feature size: {input_size}")
         logger.info(f"✓ Feature extraction complete")
         logger.info(f"  Sequences: {X.shape}, Labels: {y.shape}")
 
@@ -202,38 +215,35 @@ class SmartICUPipeline:
         return X, y, all_timestamps, all_label_names
 
     def _prepare_extra_data(self, stay, icustay_id, stay_charts=None) -> Dict:
-        """Prepare extra data tables for label generation."""
+        """Prepare extra data tables for label generation.
+        Uses pre-grouped data where possible to avoid O(n) scans.
+        """
         extra = {}
 
-        # Prescriptions
+        # Chartevents — use already-grouped stay_charts (O(1) lookup done upstream)
+        extra['chartevents'] = stay_charts if stay_charts is not None else pd.DataFrame()
+
+        # Prescriptions — filter by subject_id
         if hasattr(self.data_loader, 'prescriptions') and self.data_loader.prescriptions is not None:
-            if 'subject_id' in self.data_loader.prescriptions.columns:
+            pkey = 'subject_id' if 'subject_id' in self.data_loader.prescriptions.columns else None
+            if pkey:
                 extra['prescriptions'] = self.data_loader.prescriptions[
-                    self.data_loader.prescriptions['subject_id'] == stay['subject_id']
+                    self.data_loader.prescriptions[pkey] == stay.get('subject_id')
                 ]
             else:
                 extra['prescriptions'] = pd.DataFrame()
         else:
             extra['prescriptions'] = pd.DataFrame()
 
-        # Diagnoses
+        # Diagnoses — filter by hadm_id
         if hasattr(self.data_loader, 'diagnoses') and self.data_loader.diagnoses is not None:
             extra['diagnoses'] = self.data_loader.diagnoses[
-                self.data_loader.diagnoses['hadm_id'] == stay['hadm_id']
+                self.data_loader.diagnoses['hadm_id'] == stay.get('hadm_id')
             ]
         else:
             extra['diagnoses'] = pd.DataFrame()
 
-        # Chartevents
-        if hasattr(self.data_loader, 'chartevents') and self.data_loader.chartevents is not None:
-            if 'icustay_id' in self.data_loader.chartevents.columns:
-                extra['chartevents'] = self.data_loader.chartevents[
-                    self.data_loader.chartevents['icustay_id'] == icustay_id
-                ]
-            else:
-                extra['chartevents'] = stay_charts if stay_charts is not None else pd.DataFrame()
-
-        # Procedureevents
+        # Procedureevents — filter by icustay_id
         if hasattr(self.data_loader, 'procedureevents') and self.data_loader.procedureevents is not None:
             if len(self.data_loader.procedureevents) > 0 and 'icustay_id' in self.data_loader.procedureevents.columns:
                 extra['procedureevents'] = self.data_loader.procedureevents[
@@ -244,18 +254,18 @@ class SmartICUPipeline:
         else:
             extra['procedureevents'] = pd.DataFrame()
 
-        # Procedures ICD
+        # Procedures ICD — filter by hadm_id
         if hasattr(self.data_loader, 'procedures_icd') and self.data_loader.procedures_icd is not None:
             if len(self.data_loader.procedures_icd) > 0 and 'hadm_id' in self.data_loader.procedures_icd.columns:
                 extra['procedures_icd'] = self.data_loader.procedures_icd[
-                    self.data_loader.procedures_icd['hadm_id'] == stay['hadm_id']
+                    self.data_loader.procedures_icd['hadm_id'] == stay.get('hadm_id')
                 ]
             else:
                 extra['procedures_icd'] = pd.DataFrame()
         else:
             extra['procedures_icd'] = pd.DataFrame()
 
-        # Input events
+        # Input events — filter by icustay_id
         if hasattr(self.data_loader, 'inputevents_mv') and self.data_loader.inputevents_mv is not None:
             if len(self.data_loader.inputevents_mv) > 0 and 'icustay_id' in self.data_loader.inputevents_mv.columns:
                 extra['inputevents'] = self.data_loader.inputevents_mv[

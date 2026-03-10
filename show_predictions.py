@@ -44,7 +44,7 @@ def main():
     # Display each task
     task_order = [
         'mortality', 'sepsis', 'aki', 'hypotension',
-        'vasopressor', 'ventilation', 'readmission', 'composite',
+        'vasopressor', 'ventilation', 'los', 'readmission', 'composite',
     ]
 
     print(f"\n{'#':>3} | {'Task':<25} | {'Best Model':<18} | {'Best AUROC':>10} | Models Tried")
@@ -100,8 +100,9 @@ def main():
         ("[4]   HYPOTENSION",  "TCN primary — MAP < 65 mmHg at 1/3/6h"),
         ("[5]   VASOPRESSOR",  "XGBoost primary — drug requirement at 6/12h"),
         ("[6]   VENTILATION",  "LSTM primary — mechanical vent at 6/12/24h"),
-        ("[7]   READMISSION",  "XGBoost + SHAP — 30-day ICU readmission"),
-        ("[8]   COMPOSITE",    "MultitaskLSTM — unified deterioration score"),
+        ("[7]   LENGTH OF STAY","XGBoost primary — short (<24h) / long (>72h) stay"),
+        ("[8]   READMISSION",  "XGBoost + SHAP — 30-day ICU readmission"),
+        ("[9]   COMPOSITE",    "MultitaskLSTM — unified deterioration score"),
     ]
     for cat, desc in categories:
         print(f"  {cat:<20s} — {desc}")

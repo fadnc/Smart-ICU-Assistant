@@ -5,10 +5,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Smart ICU Assistant</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.8.0/Recharts.min.js"></script>
+    <script src="/static/js/react.min.js"></script>
+    <script src="/static/js/react-dom.min.js"></script>
+    <script src="/static/js/prop-types.min.js"></script>
+    <script src="/static/js/babel.min.js"></script>
+    <script src="/static/js/recharts.min.js"></script>
     <link
         href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=DM+Sans:wght@300;400;500;600&display=swap"
         rel="stylesheet" />
@@ -857,7 +858,50 @@
 </head>
 
 <body class="scan-effect">
-    <div id="root"></div>
+    <div id="root">
+        <!-- Loading screen shown while Babel transpiles JSX -->
+        <div id="boot-loader"
+            style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:16px;">
+            <div
+                style="width:40px;height:40px;border:3px solid var(--border);border-top:3px solid var(--cyan);border-radius:50%;animation:spin 1s linear infinite;">
+            </div>
+            <div style="color:var(--text2);font-family:var(--sans);font-size:14px;">Loading Smart ICU Dashboard…</div>
+            <div id="boot-error"
+                style="color:var(--red);font-size:12px;display:none;max-width:400px;text-align:center;"></div>
+        </div>
+        <style>
+            @keyframes spin {
+                0% {
+                    transform: rotate(0deg)
+                }
+
+                100% {
+                    transform: rotate(360deg)
+                }
+            }
+        </style>
+    </div>
+
+    <script>
+        // CDN load failure detector
+        window.__cdnOk = { react: false, babel: false, recharts: false };
+        window.addEventListener('DOMContentLoaded', function () {
+            setTimeout(function () {
+                var missing = [];
+                if (typeof React === 'undefined') missing.push('React');
+                if (typeof ReactDOM === 'undefined') missing.push('ReactDOM');
+                if (typeof Babel === 'undefined') missing.push('Babel');
+                if (typeof Recharts === 'undefined') missing.push('Recharts');
+                if (missing.length > 0) {
+                    var el = document.getElementById('boot-error');
+                    if (el) {
+                        el.style.display = 'block';
+                        el.textContent = 'Failed to load: ' + missing.join(', ') + '. Check your internet connection and try refreshing.';
+                    }
+                }
+            }, 5000);
+        });
+    </script>
 
     <script type="text/babel">
         const { useState, useEffect, useCallback, useRef } = React;
