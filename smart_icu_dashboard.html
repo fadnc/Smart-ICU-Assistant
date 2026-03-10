@@ -15,21 +15,30 @@
         rel="stylesheet" />
     <style>
         :root {
-            --bg: #050b14;
-            --bg2: #080f1c;
-            --bg3: #0b1425;
-            --panel: #0d1a2e;
-            --border: #162540;
-            --border2: #1e3358;
-            --text: #c8ddf5;
-            --text2: #7a9bc4;
-            --text3: #3d5f8a;
-            --accent: #00d4ff;
-            --accent2: #0090cc;
-            --green: #00e5a0;
-            --yellow: #ffcc00;
-            --red: #ff3b5c;
-            --orange: #ff8c00;
+            /* ── Backgrounds (layered depth) ── */
+            --bg: #06090f;
+            --bg2: #0a1018;
+            --bg3: #0f1824;
+            --panel: #111e30;
+            /* ── Borders ── */
+            --border: #1a2d47;
+            --border2: #24406a;
+            /* ── Text hierarchy ── */
+            --text: #dce8f7;
+            --text1: #dce8f7;
+            --text2: #8ba4c4;
+            --text3: #456080;
+            /* ── Accent spectrum ── */
+            --accent: #22d3ee;
+            --accent2: #0ea5c9;
+            --cyan: #22d3ee;
+            /* ── Semantic colors ── */
+            --green: #34d399;
+            --yellow: #fbbf24;
+            --red: #f43f5e;
+            --orange: #f97316;
+            --purple: #a78bfa;
+            /* ── Fonts ── */
             --mono: 'Share Tech Mono', monospace;
             --sans: 'DM Sans', sans-serif;
         }
@@ -85,7 +94,7 @@
             gap: 16px;
             padding: 0 20px;
             height: 52px;
-            background: var(--bg2);
+            background: linear-gradient(90deg, var(--bg2) 0%, #0c1520 50%, var(--bg2) 100%);
             border-bottom: 1px solid var(--border);
             flex-shrink: 0;
         }
@@ -161,6 +170,7 @@
         .tab.active {
             color: var(--accent);
             border-bottom-color: var(--accent);
+            text-shadow: 0 0 8px rgba(34, 211, 238, 0.3);
         }
 
         /* Main layout */
@@ -343,6 +353,321 @@
             border-radius: 1px;
         }
 
+        /* ── Assessment tab styles ─────────────────────── */
+        .assess-layout {
+            display: grid;
+            grid-template-columns: 380px 1fr;
+            gap: 16px;
+        }
+
+        @media (max-width: 900px) {
+            .assess-layout {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .assess-form {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 18px;
+            overflow-y: auto;
+            max-height: calc(100vh - 130px);
+        }
+
+        .assess-results {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            overflow-y: auto;
+            max-height: calc(100vh - 130px);
+        }
+
+        .input-section {
+            margin-bottom: 16px;
+        }
+
+        .input-section-title {
+            font-family: var(--mono);
+            font-size: 10px;
+            color: var(--accent);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 4px;
+        }
+
+        .input-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .input-group label {
+            font-size: 10px;
+            color: var(--text3);
+            font-family: var(--mono);
+            letter-spacing: 0.5px;
+        }
+
+        .input-group input,
+        .input-group select {
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 6px 8px;
+            color: var(--text1);
+            font-size: 13px;
+            font-family: var(--mono);
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .input-group input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.1);
+            outline: none;
+        }
+
+        .toggle-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 0;
+        }
+
+        .toggle-row label {
+            font-size: 11px;
+            color: var(--text2);
+            flex: 1;
+        }
+
+        .toggle-switch {
+            width: 36px;
+            height: 20px;
+            border-radius: 10px;
+            background: var(--border);
+            position: relative;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .toggle-switch.on {
+            background: var(--accent);
+            box-shadow: 0 0 8px rgba(34, 211, 238, 0.3);
+        }
+
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 16px;
+            height: 16px;
+            background: var(--text);
+            border-radius: 50%;
+            transition: transform 0.2s;
+        }
+
+        .toggle-switch.on::after {
+            transform: translateX(16px);
+        }
+
+        .assess-btn {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, var(--cyan), var(--accent2), var(--green));
+            background-size: 200% 200%;
+            animation: btnShimmer 3s ease infinite;
+            border: none;
+            border-radius: 6px;
+            color: var(--bg);
+            font-family: var(--mono);
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: opacity 0.2s, transform 0.1s;
+            box-shadow: 0 2px 12px rgba(34, 211, 238, 0.2);
+        }
+
+        @keyframes btnShimmer {
+            0% {
+                background-position: 0% 50%;
+            }
+
+            50% {
+                background-position: 100% 50%;
+            }
+
+            100% {
+                background-position: 0% 50%;
+            }
+        }
+
+        .assess-btn:hover {
+            opacity: 0.9;
+        }
+
+        .assess-btn:active {
+            transform: scale(0.98);
+        }
+
+        .assess-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .risk-gauge {
+            background: linear-gradient(160deg, var(--panel) 0%, rgba(17, 30, 48, 0.9) 100%);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            backdrop-filter: blur(4px);
+        }
+
+        .gauge-ring {
+            width: 140px;
+            height: 140px;
+            border-radius: 50%;
+            margin: 0 auto 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .gauge-inner {
+            font-family: var(--mono);
+            font-size: 32px;
+            font-weight: 700;
+        }
+
+        .gauge-label {
+            font-family: var(--mono);
+            font-size: 12px;
+            letter-spacing: 2px;
+            margin-top: 4px;
+        }
+
+        .result-card {
+            background: linear-gradient(160deg, var(--panel) 0%, rgba(17, 30, 48, 0.85) 100%);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px;
+            backdrop-filter: blur(4px);
+        }
+
+        .result-card-title {
+            font-family: var(--mono);
+            font-size: 11px;
+            color: var(--accent);
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            text-shadow: 0 0 6px rgba(34, 211, 238, 0.15);
+        }
+
+        .result-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 3px 0;
+        }
+
+        .result-label {
+            font-size: 11px;
+            color: var(--text2);
+            width: 130px;
+        }
+
+        .result-bar {
+            flex: 1;
+            height: 6px;
+            background: var(--border);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .result-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.5s ease;
+        }
+
+        .result-val {
+            font-family: var(--mono);
+            font-size: 11px;
+            color: var(--text1);
+            min-width: 40px;
+            text-align: right;
+        }
+
+        .clinical-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-family: var(--mono);
+            font-size: 11px;
+            border: 1px solid var(--border);
+            background: var(--bg2);
+        }
+
+        .assess-alert {
+            padding: 10px 14px;
+            border-radius: 6px;
+            border-left: 3px solid;
+            margin-bottom: 6px;
+        }
+
+        .assess-alert.critical {
+            border-color: var(--red);
+            background: rgba(239, 68, 68, 0.08);
+        }
+
+        .assess-alert.warning {
+            border-color: var(--orange);
+            background: rgba(245, 158, 11, 0.08);
+        }
+
+        .assess-alert-cat {
+            font-family: var(--mono);
+            font-size: 10px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            margin-bottom: 2px;
+        }
+
+        .assess-alert-msg {
+            font-size: 12px;
+            color: var(--text2);
+        }
+
+        .assess-empty {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 60px 20px;
+            color: var(--text3);
+            gap: 12px;
+        }
+
+        .assess-empty-icon {
+            font-size: 48px;
+            opacity: 0.3;
+        }
+
         .score-val {
             font-family: var(--mono);
             font-size: 10px;
@@ -367,10 +692,11 @@
 
         /* Cards */
         .card {
-            background: var(--panel);
+            background: linear-gradient(135deg, var(--panel) 0%, rgba(17, 30, 48, 0.85) 100%);
             border: 1px solid var(--border);
             border-radius: 6px;
             overflow: hidden;
+            backdrop-filter: blur(4px);
         }
 
         .card-header {
@@ -1446,6 +1772,195 @@
             );
         }
 
+        // ── New Assessment Tab ────────────────────────────────────────────────────────
+        function AssessTab() {
+            const [form, setForm] = useState({
+                age: 60, gender: "M", weight_kg: 75,
+                heartrate: 88, sysbp: 120, diasbp: 75, meanbp: 90, resprate: 18, tempc: 37.0, spo2: 97, glucose: 110,
+                creatinine: 1.0, lactate: 1.2, wbc: 8000, hemoglobin: 13, platelets: 250, bicarbonate: 24, chloride: 102,
+                vasopressors: false, antibiotics: false, mechanical_ventilation: false, sedation: false,
+                hours_in_icu: 6, prior_icu_admissions: 0, diagnosis: "", comorbidities: ""
+            });
+            const [result, setResult] = useState(null);
+            const [loading, setLoading] = useState(false);
+
+            const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+            const runAssessment = async () => {
+                setLoading(true);
+                try {
+                    const body = {
+                        demographics: { age: +form.age, gender: form.gender, weight_kg: +form.weight_kg },
+                        vitals: { heartrate: +form.heartrate, sysbp: +form.sysbp, diasbp: +form.diasbp, meanbp: +form.meanbp, resprate: +form.resprate, tempc: +form.tempc, spo2: +form.spo2, glucose: +form.glucose },
+                        labs: { creatinine: +form.creatinine, lactate: +form.lactate, wbc: +form.wbc, hemoglobin: +form.hemoglobin, platelets: +form.platelets, bicarbonate: +form.bicarbonate, chloride: +form.chloride },
+                        medications: { vasopressors: form.vasopressors, antibiotics: form.antibiotics, mechanical_ventilation: form.mechanical_ventilation, sedation: form.sedation },
+                        history: { hours_in_icu: +form.hours_in_icu, prior_icu_admissions: +form.prior_icu_admissions, diagnosis: form.diagnosis, comorbidities: form.comorbidities ? form.comorbidities.split(",").map(s => s.trim()) : [] }
+                    };
+                    const res = await fetch(`${API}/predict`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+                    const data = await res.json();
+                    setResult(data);
+                } catch (e) { console.error("Predict error:", e); }
+                setLoading(false);
+            };
+
+            const rColor = (v) => v > 0.6 ? "var(--red)" : v > 0.3 ? "var(--orange)" : "var(--green)";
+            const fmtPct = (v) => (v * 100).toFixed(0) + "%";
+
+            const InputField = ({ label, k, type = "number", step, hint }) => (
+                <div className="input-group">
+                    <label>{label}{hint && <span style={{ color: "var(--text3)", marginLeft: 4 }}>({hint})</span>}</label>
+                    <input type={type} value={form[k]} step={step || "any"} onChange={e => set(k, type === "number" ? e.target.value : e.target.value)} />
+                </div>
+            );
+
+            const Toggle = ({ label, k }) => (
+                <div className="toggle-row">
+                    <label>{label}</label>
+                    <div className={`toggle-switch ${form[k] ? "on" : ""}`} onClick={() => set(k, !form[k])} />
+                </div>
+            );
+
+            return (
+                <div className="assess-layout">
+                    {/* INPUT FORM */}
+                    <div className="assess-form">
+                        <div className="input-section">
+                            <div className="input-section-title">Demographics</div>
+                            <div className="input-grid">
+                                <InputField label="Age" k="age" hint="years" />
+                                <div className="input-group">
+                                    <label>Gender</label>
+                                    <select value={form.gender} onChange={e => set("gender", e.target.value)} style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 4, padding: "6px 8px", color: "var(--text1)", fontSize: 13, fontFamily: "var(--mono)" }}>
+                                        <option value="M">Male</option>
+                                        <option value="F">Female</option>
+                                    </select>
+                                </div>
+                                <InputField label="Weight" k="weight_kg" hint="kg" />
+                            </div>
+                        </div>
+
+                        <div className="input-section">
+                            <div className="input-section-title">Vital Signs</div>
+                            <div className="input-grid">
+                                <InputField label="Heart Rate" k="heartrate" hint="bpm" />
+                                <InputField label="Systolic BP" k="sysbp" hint="mmHg" />
+                                <InputField label="Diastolic BP" k="diasbp" hint="mmHg" />
+                                <InputField label="Mean BP (MAP)" k="meanbp" hint="mmHg" />
+                                <InputField label="Resp Rate" k="resprate" hint="/min" />
+                                <InputField label="Temperature" k="tempc" hint="°C" step="0.1" />
+                                <InputField label="SpO₂" k="spo2" hint="%" />
+                                <InputField label="Glucose" k="glucose" hint="mg/dL" />
+                            </div>
+                        </div>
+
+                        <div className="input-section">
+                            <div className="input-section-title">Laboratory Values</div>
+                            <div className="input-grid">
+                                <InputField label="Creatinine" k="creatinine" hint="mg/dL" step="0.1" />
+                                <InputField label="Lactate" k="lactate" hint="mmol/L" step="0.1" />
+                                <InputField label="WBC" k="wbc" hint="/µL" />
+                                <InputField label="Hemoglobin" k="hemoglobin" hint="g/dL" step="0.1" />
+                                <InputField label="Platelets" k="platelets" hint="×10³" />
+                                <InputField label="Bicarbonate" k="bicarbonate" hint="mEq/L" />
+                                <InputField label="Chloride" k="chloride" hint="mEq/L" />
+                            </div>
+                        </div>
+
+                        <div className="input-section">
+                            <div className="input-section-title">Current Medications</div>
+                            <Toggle label="Vasopressors" k="vasopressors" />
+                            <Toggle label="Antibiotics" k="antibiotics" />
+                            <Toggle label="Mechanical Ventilation" k="mechanical_ventilation" />
+                            <Toggle label="Sedation" k="sedation" />
+                        </div>
+
+                        <div className="input-section">
+                            <div className="input-section-title">ICU Context</div>
+                            <div className="input-grid">
+                                <InputField label="Hours in ICU" k="hours_in_icu" />
+                                <InputField label="Prior ICU Visits" k="prior_icu_admissions" />
+                            </div>
+                            <div className="input-group" style={{ marginTop: 8 }}>
+                                <label>Diagnosis</label>
+                                <input type="text" value={form.diagnosis} onChange={e => set("diagnosis", e.target.value)} placeholder="e.g. Pneumonia" style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 4, padding: "6px 8px", color: "var(--text1)", fontSize: 13 }} />
+                            </div>
+                            <div className="input-group" style={{ marginTop: 6 }}>
+                                <label>Comorbidities (comma-separated)</label>
+                                <input type="text" value={form.comorbidities} onChange={e => set("comorbidities", e.target.value)} placeholder="e.g. diabetes, hypertension" style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: 4, padding: "6px 8px", color: "var(--text1)", fontSize: 13 }} />
+                            </div>
+                        </div>
+
+                        <button className="assess-btn" onClick={runAssessment} disabled={loading}>
+                            {loading ? "Analyzing…" : "⚡ Run Assessment"}
+                        </button>
+                    </div>
+
+                    {/* RESULTS PANEL */}
+                    <div className="assess-results">
+                        {!result && (
+                            <div className="assess-empty">
+                                <div className="assess-empty-icon">🏥</div>
+                                <div style={{ fontFamily: "var(--mono)", fontSize: 12, letterSpacing: 1 }}>ENTER PATIENT DATA AND RUN ASSESSMENT</div>
+                                <div style={{ fontSize: 11, maxWidth: 300, textAlign: "center", lineHeight: 1.5 }}>Fill in the clinical data on the left and click Run Assessment to get real-time risk predictions across all categories.</div>
+                            </div>
+                        )}
+                        {result && (
+                            <>
+                                {/* Risk Gauge */}
+                                <div className="risk-gauge">
+                                    <div className="gauge-ring" style={{ border: `4px solid ${rColor(result.composite_score)}`, boxShadow: `0 0 20px ${rColor(result.composite_score)}33` }}>
+                                        <div>
+                                            <div className="gauge-inner" style={{ color: rColor(result.composite_score) }}>{fmtPct(result.composite_score)}</div>
+                                            <div className="gauge-label" style={{ color: rColor(result.composite_score) }}>{result.risk_level} RISK</div>
+                                        </div>
+                                    </div>
+                                    <div style={{ display: "flex", justifyContent: "center", gap: 12, marginTop: 12, flexWrap: "wrap" }}>
+                                        {result.clinical_scores && (
+                                            <>
+                                                <span className="clinical-badge">SIRS: <strong style={{ color: result.clinical_scores.sirs >= 3 ? "var(--red)" : result.clinical_scores.sirs >= 2 ? "var(--orange)" : "var(--green)" }}>{result.clinical_scores.sirs}/4</strong></span>
+                                                <span className="clinical-badge">Shock Index: <strong style={{ color: result.clinical_scores.shock_index > 1 ? "var(--red)" : "var(--green)" }}>{result.clinical_scores.shock_index}</strong></span>
+                                                <span className="clinical-badge">MAP: <strong style={{ color: result.clinical_scores.map < 65 ? "var(--red)" : result.clinical_scores.map < 70 ? "var(--orange)" : "var(--green)" }}>{result.clinical_scores.map}</strong></span>
+                                            </>
+                                        )}
+                                        <span className="clinical-badge" style={{ borderColor: "var(--text3)" }}>Source: {result.source}</span>
+                                    </div>
+                                </div>
+
+                                {/* Per-category results */}
+                                {result.groups && Object.entries(result.groups).map(([group, scores]) => (
+                                    <div key={group} className="result-card">
+                                        <div className="result-card-title">{group}</div>
+                                        {Object.entries(scores).map(([label, val]) => (
+                                            <div key={label} className="result-row">
+                                                <div className="result-label">{label.replace(/_/g, " ")}</div>
+                                                <div className="result-bar">
+                                                    <div className="result-fill" style={{ width: fmtPct(val), background: rColor(val) }} />
+                                                </div>
+                                                <div className="result-val" style={{ color: rColor(val) }}>{fmtPct(val)}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ))}
+
+                                {/* Alerts */}
+                                {result.alerts && result.alerts.length > 0 && (
+                                    <div className="result-card">
+                                        <div className="result-card-title">Clinical Alerts</div>
+                                        {result.alerts.map((a, i) => (
+                                            <div key={i} className={`assess-alert ${a.type}`}>
+                                                <div className="assess-alert-cat" style={{ color: a.type === "critical" ? "var(--red)" : "var(--orange)" }}>{a.type.toUpperCase()} · {a.category}</div>
+                                                <div className="assess-alert-msg">{a.message}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
         // ── App ───────────────────────────────────────────────────────────────────────
         function App() {
             const [tab, setTab] = useState("overview");
@@ -1460,6 +1975,7 @@
                 { id: "overview", label: "Overview" },
                 { id: "patient", label: selectedPatient ? `Patient #${selectedPatient.icustay_id}` : "Patient Detail" },
                 { id: "alerts", label: "Alerts" },
+                { id: "assess", label: "⚡ New Assessment" },
             ];
 
             return (
@@ -1488,6 +2004,7 @@
                                 {tab === "overview" && <OverviewTab />}
                                 {tab === "patient" && <PatientTab patient={selectedPatient} />}
                                 {tab === "alerts" && <AlertsTab onSelectPatient={handleSelectPatient} />}
+                                {tab === "assess" && <AssessTab />}
                             </div>
                         </div>
                     </div>

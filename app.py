@@ -758,6 +758,395 @@ async def health():
     }
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# NEW PATIENT PREDICTION — POST /api/predict
+# ═════════════════════════════════════════════════════════════════════════════
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict
+
+class VitalsInput(BaseModel):
+    heartrate:  float = Field(80, description="Heart rate (bpm)")
+    sysbp:      float = Field(120, description="Systolic BP (mmHg)")
+    diasbp:     float = Field(80, description="Diastolic BP (mmHg)")
+    meanbp:     float = Field(90, description="Mean arterial pressure (mmHg)")
+    resprate:   float = Field(16, description="Respiratory rate (breaths/min)")
+    tempc:      float = Field(37.0, description="Temperature (°C)")
+    spo2:       float = Field(98, description="Oxygen saturation (%)")
+    glucose:    float = Field(100, description="Blood glucose (mg/dL)")
+
+class LabsInput(BaseModel):
+    creatinine:  float = Field(1.0, description="Creatinine (mg/dL)")
+    lactate:     float = Field(1.0, description="Lactate (mmol/L)")
+    wbc:         float = Field(8000, description="White blood cell count (/µL)")
+    hemoglobin:  float = Field(13.0, description="Hemoglobin (g/dL)")
+    platelets:   float = Field(250, description="Platelet count (×10³/µL)")
+    bicarbonate: float = Field(24, description="Bicarbonate (mEq/L)")
+    chloride:    float = Field(102, description="Chloride (mEq/L)")
+
+class MedicationsInput(BaseModel):
+    vasopressors:            bool = Field(False, description="Currently on vasopressors")
+    antibiotics:             bool = Field(False, description="Currently on antibiotics")
+    mechanical_ventilation:  bool = Field(False, description="Currently on mech vent")
+    sedation:                bool = Field(False, description="Currently sedated")
+
+class DemographicsInput(BaseModel):
+    age:       int   = Field(60, description="Patient age (years)")
+    gender:    str   = Field("M", description="M or F")
+    weight_kg: float = Field(75, description="Weight in kg")
+
+class HistoryInput(BaseModel):
+    hours_in_icu:          float       = Field(6, description="Hours since ICU admission")
+    prior_icu_admissions:  int         = Field(0, description="Prior ICU visits")
+    diagnosis:             str         = Field("", description="Primary diagnosis")
+    comorbidities:         List[str]   = Field([], description="e.g. diabetes, hypertension")
+
+class PatientInput(BaseModel):
+    demographics: DemographicsInput = DemographicsInput()
+    vitals:       VitalsInput       = VitalsInput()
+    labs:         LabsInput         = LabsInput()
+    medications:  MedicationsInput  = MedicationsInput()
+    history:      HistoryInput      = HistoryInput()
+
+
+def _clinical_rule_scores(v: VitalsInput, l: LabsInput, m: MedicationsInput,
+                          d: DemographicsInput, h: HistoryInput) -> dict:
+    """Compute risk scores using evidence-based clinical rules."""
+    scores = {}
+
+    # ── SIRS Score (0-4) ─────────────────────────────────────────────────
+    sirs = 0
+    if v.tempc > 38.3 or v.tempc < 36.0:
+        sirs += 1
+    if v.heartrate > 90:
+        sirs += 1
+    if v.resprate > 20:
+        sirs += 1
+    if l.wbc > 12000 or l.wbc < 4000:
+        sirs += 1
+
+    # ── Shock Index ──────────────────────────────────────────────────────
+    shock_index = round(v.heartrate / max(v.sysbp, 1), 2)
+
+    # ── MORTALITY ────────────────────────────────────────────────────────
+    mort_base = 0.0
+    if d.age > 80:       mort_base += 0.25
+    elif d.age > 65:     mort_base += 0.15
+    if v.meanbp < 60:    mort_base += 0.20
+    if l.lactate > 4.0:  mort_base += 0.25
+    elif l.lactate > 2.0:mort_base += 0.10
+    if v.spo2 < 90:      mort_base += 0.15
+    if sirs >= 3:         mort_base += 0.10
+    if shock_index > 1.0: mort_base += 0.10
+    mort_base = min(1.0, mort_base)
+
+    scores["mortality_6h"]  = round(min(1.0, mort_base * 0.7), 4)
+    scores["mortality_12h"] = round(min(1.0, mort_base * 0.85), 4)
+    scores["mortality_24h"] = round(min(1.0, mort_base), 4)
+
+    # ── SEPSIS (SIRS + suspected infection) ──────────────────────────────
+    infection_factor = 0.0
+    if m.antibiotics:      infection_factor += 0.30
+    if l.wbc > 12000:      infection_factor += 0.15
+    if l.lactate > 2.0:    infection_factor += 0.20
+    if v.tempc > 38.3:     infection_factor += 0.15
+    if sirs >= 2:          infection_factor += 0.20 * (sirs / 4)
+
+    sepsis_base = min(1.0, (sirs / 4) * 0.5 + infection_factor)
+    scores["sepsis_6h"]  = round(min(1.0, sepsis_base * 0.7), 4)
+    scores["sepsis_12h"] = round(min(1.0, sepsis_base * 0.85), 4)
+    scores["sepsis_24h"] = round(min(1.0, sepsis_base), 4)
+
+    # ── AKI (KDIGO stages) ──────────────────────────────────────────────
+    # Baseline creatinine assumed ~1.0 for new patient
+    cr_baseline = 1.0
+    cr_ratio = l.creatinine / max(cr_baseline, 0.1)
+    cr_increase = l.creatinine - cr_baseline
+
+    aki1 = min(1.0, max(0, (cr_ratio - 1.3) / 0.5) * 0.5 + max(0, (cr_increase - 0.2) / 0.3) * 0.5)
+    aki2 = min(1.0, max(0, (cr_ratio - 1.8) / 0.5) * 0.7)
+    aki3 = min(1.0, max(0, (cr_ratio - 2.8) / 0.5) * 0.7)
+
+    scores["aki_stage1_24h"] = round(aki1, 4)
+    scores["aki_stage2_24h"] = round(aki2, 4)
+    scores["aki_stage3_24h"] = round(aki3, 4)
+    scores["aki_stage1_48h"] = round(min(1.0, aki1 * 1.15), 4)
+    scores["aki_stage2_48h"] = round(min(1.0, aki2 * 1.15), 4)
+    scores["aki_stage3_48h"] = round(min(1.0, aki3 * 1.15), 4)
+
+    # ── HYPOTENSION (MAP < 65) ──────────────────────────────────────────
+    hypo_base = 0.0
+    if v.meanbp < 55:      hypo_base = 0.90
+    elif v.meanbp < 60:    hypo_base = 0.70
+    elif v.meanbp < 65:    hypo_base = 0.50
+    elif v.meanbp < 70:    hypo_base = 0.20
+
+    scores["hypotension_1h"] = round(min(1.0, hypo_base), 4)
+    scores["hypotension_3h"] = round(min(1.0, hypo_base * 1.1), 4)
+    scores["hypotension_6h"] = round(min(1.0, hypo_base * 1.2), 4)
+
+    # ── VASOPRESSOR ─────────────────────────────────────────────────────
+    vaso_base = 0.0
+    if m.vasopressors:      vaso_base += 0.70
+    if v.meanbp < 65:       vaso_base += 0.25
+    elif v.meanbp < 70:     vaso_base += 0.10
+    if shock_index > 1.0:   vaso_base += 0.15
+    vaso_base = min(1.0, vaso_base)
+
+    scores["vasopressor_6h"]  = round(min(1.0, vaso_base * 0.85), 4)
+    scores["vasopressor_12h"] = round(min(1.0, vaso_base), 4)
+
+    # ── VENTILATION ─────────────────────────────────────────────────────
+    vent_base = 0.0
+    if m.mechanical_ventilation: vent_base += 0.70
+    if v.spo2 < 88:             vent_base += 0.30
+    elif v.spo2 < 92:           vent_base += 0.15
+    if v.resprate > 30:         vent_base += 0.20
+    elif v.resprate > 24:       vent_base += 0.10
+    vent_base = min(1.0, vent_base)
+
+    scores["ventilation_6h"]  = round(min(1.0, vent_base * 0.7), 4)
+    scores["ventilation_12h"] = round(min(1.0, vent_base * 0.85), 4)
+    scores["ventilation_24h"] = round(min(1.0, vent_base), 4)
+
+    # ── LENGTH OF STAY ──────────────────────────────────────────────────
+    los_short = 0.0  # P(discharge < 24h)
+    los_long  = 0.0  # P(stay > 72h)
+    severity = (sirs / 4) * 0.3 + mort_base * 0.3 + sepsis_base * 0.2 + max(0, aki1) * 0.2
+    if severity < 0.15:     los_short = 0.60
+    elif severity < 0.30:   los_short = 0.30
+    if severity > 0.50:     los_long = 0.70
+    elif severity > 0.30:   los_long = 0.40
+
+    scores["los_short_24h"] = round(los_short, 4)
+    scores["los_long_72h"]  = round(los_long, 4)
+
+    clinical_info = {
+        "sirs": sirs,
+        "shock_index": shock_index,
+        "map": v.meanbp,
+        "cr_ratio": round(cr_ratio, 2),
+    }
+
+    return scores, clinical_info
+
+
+def _run_models_on_input(v: VitalsInput, l: LabsInput) -> dict:
+    """Run trained models on new patient data (if models exist)."""
+    _load_all_models()
+    if not _model_registry:
+        return {}
+
+    # Build a single-step feature vector from user input
+    # (same feature order as training: 8 vitals + derived + 7 labs)
+    feat_vals = [
+        v.heartrate, v.sysbp, v.diasbp, v.meanbp,
+        v.resprate, v.tempc, v.spo2, v.glucose,
+        # Derived features (from feature_engineering.py)
+        v.heartrate / max(v.sysbp, 1),  # shock_index
+        v.sysbp - v.diasbp,              # pulse_pressure
+        v.sysbp * v.heartrate,           # rate_pressure_product
+        # Labs
+        l.creatinine, l.lactate, l.wbc, l.hemoglobin,
+        l.platelets, l.bicarbonate, l.chloride,
+    ]
+
+    # Create a 24-step sequence by repeating (simulates stable patient)
+    n_features = len(feat_vals)
+    seq = np.array([feat_vals] * 24, dtype=np.float32)  # [24, n_features]
+    X = seq[np.newaxis, :, :]                            # [1, 24, n_features]
+
+    scores = {}
+    for task, info in _model_registry.items():
+        try:
+            labels = info["labels"]
+            mtype  = info["type"]
+            model  = info["model"]
+
+            # Pad/truncate features to match model input size
+            model_input_size = None
+            if mtype == "xgboost":
+                # XGBoost expects flattened
+                X_flat = X.reshape(1, -1)
+                for i, m in enumerate(model.models):
+                    if m is None or i >= len(labels):
+                        continue
+                    # Pad if needed
+                    expected = m.n_features_in_ if hasattr(m, 'n_features_in_') else X_flat.shape[1]
+                    if X_flat.shape[1] < expected:
+                        X_flat = np.pad(X_flat, ((0,0),(0, expected - X_flat.shape[1])))
+                    elif X_flat.shape[1] > expected:
+                        X_flat = X_flat[:, :expected]
+                    prob = float(m.predict_proba(X_flat)[0, 1])
+                    scores[labels[i]] = round(prob, 4)
+            else:
+                import torch
+                # Check model input size and pad/truncate
+                X_t = torch.FloatTensor(X)
+                try:
+                    with torch.no_grad():
+                        out = model(X_t).numpy()[0]
+                except RuntimeError:
+                    # Feature size mismatch — try to pad
+                    if hasattr(model, 'lstm'):
+                        expected = model.lstm.input_size
+                    elif hasattr(model, 'input_proj'):
+                        expected = model.input_proj.in_features
+                    else:
+                        continue
+                    if n_features < expected:
+                        X_padded = np.pad(X, ((0,0),(0,0),(0, expected - n_features)))
+                        X_t = torch.FloatTensor(X_padded)
+                    elif n_features > expected:
+                        X_t = torch.FloatTensor(X[:, :, :expected])
+                    with torch.no_grad():
+                        out = model(X_t).numpy()[0]
+
+                for i, lbl in enumerate(labels):
+                    if i < len(out):
+                        scores[lbl] = round(float(out[i]), 4)
+        except Exception:
+            print(f"[WARN] Model prediction failed for task={task}:")
+            traceback.print_exc()
+
+    return scores
+
+
+@app.post("/api/predict")
+async def predict_new_patient(patient: PatientInput):
+    """
+    Run all ICU risk predictions on a new patient's clinical data.
+
+    Returns composite risk score, per-category predictions, clinical alerts,
+    and clinical scores (SIRS, shock index, etc.)
+    """
+    v = patient.vitals
+    l = patient.labs
+    m = patient.medications
+    d = patient.demographics
+    h = patient.history
+
+    # 1. Clinical-rule-based scoring (always runs)
+    rule_scores, clinical_info = _clinical_rule_scores(v, l, m, d, h)
+
+    # 2. Trained model inference (if models exist)
+    model_scores = _run_models_on_input(v, l)
+
+    # 3. Merge: prefer model scores, fall back to clinical rules
+    final_scores = {}
+    for lbl in PREDICTION_LABELS:
+        if lbl in model_scores and model_scores[lbl] > 0:
+            final_scores[lbl] = model_scores[lbl]
+        else:
+            final_scores[lbl] = rule_scores.get(lbl, 0.0)
+
+    source = "trained_models" if model_scores else "clinical_rules"
+
+    # 4. Composite risk score
+    composite = round(
+        final_scores.get("mortality_24h",  0) * 0.30 +
+        final_scores.get("sepsis_24h",     0) * 0.20 +
+        final_scores.get("aki_stage1_24h", 0) * 0.15 +
+        final_scores.get("hypotension_6h", 0) * 0.20 +
+        final_scores.get("ventilation_24h",0) * 0.15,
+        4,
+    )
+    risk = "HIGH" if composite > 0.6 else "MEDIUM" if composite > 0.3 else "LOW"
+
+    # 5. Generate clinical alerts
+    alerts = []
+
+    # Mortality
+    if final_scores.get("mortality_24h", 0) > 0.5:
+        alerts.append({"type": "critical", "category": "Mortality",
+                       "message": f"High 24h mortality risk ({final_scores['mortality_24h']:.0%})",
+                       "score": final_scores["mortality_24h"]})
+
+    # Sepsis
+    if clinical_info["sirs"] >= 3:
+        alerts.append({"type": "critical", "category": "Sepsis",
+                       "message": f"SIRS score {clinical_info['sirs']}/4 — high sepsis risk",
+                       "score": final_scores.get("sepsis_24h", 0)})
+    elif clinical_info["sirs"] >= 2 and m.antibiotics:
+        alerts.append({"type": "warning", "category": "Sepsis",
+                       "message": f"SIRS {clinical_info['sirs']}/4 + antibiotics — monitor for sepsis",
+                       "score": final_scores.get("sepsis_24h", 0)})
+
+    # AKI
+    if l.creatinine > 2.0:
+        alerts.append({"type": "critical", "category": "AKI",
+                       "message": f"Creatinine {l.creatinine} mg/dL (elevated) — AKI risk",
+                       "score": final_scores.get("aki_stage1_24h", 0)})
+    elif l.creatinine > 1.3:
+        alerts.append({"type": "warning", "category": "AKI",
+                       "message": f"Creatinine {l.creatinine} mg/dL — monitor kidney function",
+                       "score": final_scores.get("aki_stage1_24h", 0)})
+
+    # Hypotension
+    if v.meanbp < 65:
+        alerts.append({"type": "critical", "category": "Hypotension",
+                       "message": f"MAP {v.meanbp:.0f} mmHg < 65 — active hypotension",
+                       "score": final_scores.get("hypotension_1h", 0)})
+    elif v.meanbp < 70:
+        alerts.append({"type": "warning", "category": "Hypotension",
+                       "message": f"MAP {v.meanbp:.0f} mmHg — borderline hypotension",
+                       "score": final_scores.get("hypotension_3h", 0)})
+
+    # Vasopressor
+    if m.vasopressors:
+        alerts.append({"type": "warning", "category": "Vasopressor",
+                       "message": "Patient currently on vasopressors",
+                       "score": final_scores.get("vasopressor_12h", 0)})
+
+    # Ventilation
+    if v.spo2 < 90:
+        alerts.append({"type": "critical", "category": "Ventilation",
+                       "message": f"SpO₂ {v.spo2}% — severe hypoxemia, consider ventilation",
+                       "score": final_scores.get("ventilation_6h", 0)})
+    elif v.spo2 < 94 and v.resprate > 24:
+        alerts.append({"type": "warning", "category": "Ventilation",
+                       "message": f"SpO₂ {v.spo2}% + RR {v.resprate} — respiratory distress",
+                       "score": final_scores.get("ventilation_12h", 0)})
+
+    # Shock
+    if clinical_info["shock_index"] > 1.0:
+        alerts.append({"type": "warning", "category": "Hemodynamic",
+                       "message": f"Shock index {clinical_info['shock_index']} (>1.0) — hemodynamic instability",
+                       "score": composite})
+
+    # Lactate
+    if l.lactate > 4.0:
+        alerts.append({"type": "critical", "category": "Metabolic",
+                       "message": f"Lactate {l.lactate} mmol/L — severe tissue hypoperfusion",
+                       "score": composite})
+    elif l.lactate > 2.0:
+        alerts.append({"type": "warning", "category": "Metabolic",
+                       "message": f"Lactate {l.lactate} mmol/L — elevated, monitor perfusion",
+                       "score": composite})
+
+    # Sort alerts by severity
+    alerts.sort(key=lambda a: (0 if a["type"] == "critical" else 1, -a["score"]))
+
+    # 6. Build response
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    return {
+        "patient_id":      f"NEW_{ts}",
+        "composite_score": composite,
+        "risk_level":      risk,
+        "scores":          final_scores,
+        "groups":          {g: {lbl: final_scores.get(lbl, 0.0) for lbl in ls}
+                           for g, ls in TASK_GROUPS.items()},
+        "alerts":          alerts,
+        "clinical_scores": clinical_info,
+        "input_summary": {
+            "age": d.age, "gender": d.gender,
+            "hr": v.heartrate, "bp": f"{v.sysbp}/{v.diasbp}",
+            "map": v.meanbp, "spo2": v.spo2, "rr": v.resprate,
+            "temp": v.tempc, "cr": l.creatinine, "lactate": l.lactate,
+        },
+        "source":          source,
+        "updated_at":      datetime.utcnow().isoformat() + "Z",
+    }
+
 _stats_cache = {"data": None, "ts": 0}
 
 @app.get("/api/stats")
