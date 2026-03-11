@@ -271,7 +271,9 @@ class XGBoostPredictor:
                  max_depth: int = 6,
                  learning_rate: float = 0.1,
                  n_estimators: int = 100,
-                 subsample: float = 0.8):
+                 subsample: float = 0.8,
+                 tree_method: str = 'auto',
+                 gpu_id: int = 0):
         """
         Initialize XGBoost predictor
         
@@ -281,13 +283,21 @@ class XGBoostPredictor:
             learning_rate: Learning rate
             n_estimators: Number of boosting rounds
             subsample: Subsample ratio
+            tree_method: 'gpu_hist' for GPU, 'auto' for CPU
+            gpu_id: GPU device id
         """
         self.num_tasks = num_tasks
         self.models = []
         
+        # Auto-detect GPU
+        import torch
+        if tree_method == 'auto' and torch.cuda.is_available():
+            tree_method = 'gpu_hist'
+            logger.info(f"XGBoost: using GPU (gpu_hist, device {gpu_id})")
+        
         # Create one model per task
         for i in range(num_tasks):
-            model = xgb.XGBClassifier(
+            xgb_params = dict(
                 max_depth=max_depth,
                 learning_rate=learning_rate,
                 n_estimators=n_estimators,
@@ -295,8 +305,12 @@ class XGBoostPredictor:
                 objective='binary:logistic',
                 eval_metric='auc',
                 use_label_encoder=False,
-                random_state=42
+                random_state=42,
+                tree_method=tree_method,
             )
+            if tree_method == 'gpu_hist':
+                xgb_params['gpu_id'] = gpu_id
+            model = xgb.XGBClassifier(**xgb_params)
             self.models.append(model)
     
     def flatten_sequences(self, X: np.ndarray) -> np.ndarray:

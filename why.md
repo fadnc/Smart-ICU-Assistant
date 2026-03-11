@@ -32,3 +32,25 @@ This will take ~30-45 minutes to load the full 33.6 GB CHARTEVENTS file via chun
 
 
 to run : python main_pipeline.py --data_dir data 2>&1
+
+training.py — Core GPU optimizations:
+
+Mixed Precision (FP16) via torch.amp.autocast — halves VRAM usage (~2× memory savings)
+Gradient Accumulation — batch 32 × 2 steps = effective batch 64 (fits in 4GB)
+Pin Memory + non_blocking=True — faster CPU→GPU data transfers
+get_device() — auto-detects your RTX 3050, logs name + VRAM
+clear_gpu_memory() — frees VRAM cache between model trainings
+config.yaml — New GPU_CONFIG section:
+
+yaml
+GPU_CONFIG:
+  batch_size: 32           # Safe for 4GB VRAM
+  grad_accum_steps: 2      # Effective batch = 64
+  use_amp: true            # FP16 mixed precision
+models.py — XGBoost GPU:
+
+tree_method: gpu_hist — GPU-accelerated tree boosting
+Auto-falls back to CPU if no CUDA
+base_predictor.py — VRAM cleanup:
+
+Calls clear_gpu_memory() before each model training to prevent OOM

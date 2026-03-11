@@ -16,7 +16,7 @@ import yaml
 
 import torch
 from models import create_model, XGBoostPredictor
-from training import ModelTrainer
+from training import ModelTrainer, clear_gpu_memory
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +122,9 @@ class BasePredictor(ABC):
         for model_name in self.MODELS_TO_TRY:
             logger.info(f"[{self.TASK_NAME}] Training {model_name.upper()}...")
             try:
+                # Clear VRAM before each model (critical for 4GB)
+                clear_gpu_memory()
+                
                 metrics = self._train_single_model(
                     model_name, X, task_labels, timestamps, input_size, num_tasks
                 )
@@ -241,7 +244,7 @@ class BasePredictor(ABC):
         }
 
     def _train_xgboost(self, X, y, timestamps, config) -> Dict:
-        """Train XGBoost baseline."""
+        """Train XGBoost baseline (GPU-accelerated when available)."""
         xgb_config = config.get('XGBOOST_CONFIG', {})
         predictor = XGBoostPredictor(
             num_tasks=y.shape[1],
@@ -249,6 +252,8 @@ class BasePredictor(ABC):
             learning_rate=xgb_config.get('learning_rate', 0.1),
             n_estimators=xgb_config.get('n_estimators', 100),
             subsample=xgb_config.get('subsample', 0.8),
+            tree_method=xgb_config.get('tree_method', 'auto'),
+            gpu_id=xgb_config.get('gpu_id', 0),
         )
 
         # Temporal split (use ModelTrainer just for splitting)

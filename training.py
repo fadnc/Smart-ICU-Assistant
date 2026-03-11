@@ -1,11 +1,13 @@
 """
 Training Pipeline for ICU Prediction Models
-Handles temporal data splitting, training, and evaluation
+Handles temporal data splitting, training, and evaluation.
+GPU-optimized for RTX 3050 (4GB VRAM) with mixed precision (FP16).
 """
 
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
+from torch.amp import autocast, GradScaler
 import numpy as np
 import pandas as pd
 from typing import Dict, Tuple, List, Optional
@@ -18,6 +20,25 @@ from tqdm import tqdm
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# ── GPU helpers ──────────────────────────────────────────
+def get_device():
+    """Get best available device with info logging."""
+    if torch.cuda.is_available():
+        dev = torch.device('cuda')
+        name = torch.cuda.get_device_name(0)
+        vram = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+        logger.info(f"GPU detected: {name} ({vram:.1f} GB VRAM)")
+        return dev
+    logger.info("No GPU detected — using CPU")
+    return torch.device('cpu')
+
+
+def clear_gpu_memory():
+    """Free cached VRAM between training runs."""
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
 
 
 class ICUDataset(Dataset):
@@ -47,28 +68,40 @@ class ModelTrainer:
     def __init__(self, 
                  model: nn.Module,
                  config: dict,
-                 device: str = 'cuda' if torch.cuda.is_available() else 'cpu'):
+                 device=None):
         """
         Initialize trainer
         
         Args:
             model: PyTorch model to train
             config: Configuration dictionary
-            device: Device to use for training
+            device: Device to use for training (auto-detects GPU)
         """
-        self.model = model.to(device)
-        self.device = device
+        self.device = device or get_device()
+        self.model = model.to(self.device)
         self.config = config
+        self.use_amp = (self.device.type == 'cuda')  # Mixed precision on GPU
         
-        # Training parameters
+        # Training parameters — smaller batch for 4GB VRAM
         lstm_config = config.get('LSTM_CONFIG', {})
+        gpu_config = config.get('GPU_CONFIG', {})
         self.learning_rate = lstm_config.get('learning_rate', 0.001)
-        self.batch_size = lstm_config.get('batch_size', 64)
+        
+        # Auto-select batch size based on device
+        if self.device.type == 'cuda':
+            self.batch_size = gpu_config.get('batch_size', 32)  # 32 for 4GB VRAM
+        else:
+            self.batch_size = lstm_config.get('batch_size', 64)
+        
         self.epochs = lstm_config.get('epochs', 50)
+        self.grad_accum_steps = gpu_config.get('grad_accum_steps', 2)  # simulate larger batch
         
         # Initialize optimizer and loss
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
         self.criterion = nn.BCELoss()
+        
+        # Mixed-precision scaler
+        self.scaler = GradScaler('cuda') if self.use_amp else None
         
         # Early stopping
         self.best_val_loss = float('inf')
@@ -79,6 +112,10 @@ class ModelTrainer:
         self.train_losses = []
         self.val_losses = []
         self.metrics_history = []
+        
+        logger.info(f"Trainer initialized on {self.device} | "
+                    f"batch={self.batch_size} | AMP={'ON' if self.use_amp else 'OFF'} | "
+                    f"grad_accum={self.grad_accum_steps}")
     
     def temporal_split(self,
                       sequences: np.ndarray,
@@ -125,7 +162,7 @@ class ModelTrainer:
     
     def train_epoch(self, train_loader: DataLoader) -> float:
         """
-        Train for one epoch
+        Train for one epoch with mixed precision and gradient accumulation.
         
         Args:
             train_loader: Training data loader
@@ -135,27 +172,39 @@ class ModelTrainer:
         """
         self.model.train()
         total_loss = 0
+        self.optimizer.zero_grad()
         
-        for sequences, labels in train_loader:
-            sequences = sequences.to(self.device)
-            labels = labels.to(self.device)
+        for step, (sequences, labels) in enumerate(train_loader):
+            sequences = sequences.to(self.device, non_blocking=True)
+            labels = labels.to(self.device, non_blocking=True)
             
-            # Forward pass
-            self.optimizer.zero_grad()
-            predictions = self.model(sequences)
-            loss = self.criterion(predictions, labels)
+            # Forward pass with optional AMP
+            if self.use_amp:
+                with autocast('cuda'):
+                    predictions = self.model(sequences)
+                    loss = self.criterion(predictions, labels) / self.grad_accum_steps
+                self.scaler.scale(loss).backward()
+            else:
+                predictions = self.model(sequences)
+                loss = self.criterion(predictions, labels) / self.grad_accum_steps
+                loss.backward()
             
-            # Backward pass
-            loss.backward()
-            self.optimizer.step()
+            total_loss += loss.item() * self.grad_accum_steps
             
-            total_loss += loss.item()
+            # Gradient accumulation step
+            if (step + 1) % self.grad_accum_steps == 0 or (step + 1) == len(train_loader):
+                if self.use_amp:
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
+                    self.optimizer.step()
+                self.optimizer.zero_grad()
         
         return total_loss / len(train_loader)
     
     def evaluate(self, val_loader: DataLoader) -> Tuple[float, Dict]:
         """
-        Evaluate model on validation set
+        Evaluate model on validation set (uses AMP for speed).
         
         Args:
             val_loader: Validation data loader
@@ -170,14 +219,19 @@ class ModelTrainer:
         
         with torch.no_grad():
             for sequences, labels in val_loader:
-                sequences = sequences.to(self.device)
-                labels = labels.to(self.device)
+                sequences = sequences.to(self.device, non_blocking=True)
+                labels = labels.to(self.device, non_blocking=True)
                 
-                predictions = self.model(sequences)
-                loss = self.criterion(predictions, labels)
+                if self.use_amp:
+                    with autocast('cuda'):
+                        predictions = self.model(sequences)
+                        loss = self.criterion(predictions, labels)
+                else:
+                    predictions = self.model(sequences)
+                    loss = self.criterion(predictions, labels)
                 
                 total_loss += loss.item()
-                all_predictions.append(predictions.cpu().numpy())
+                all_predictions.append(predictions.float().cpu().numpy())
                 all_labels.append(labels.cpu().numpy())
         
         avg_loss = total_loss / len(val_loader)
@@ -256,7 +310,7 @@ class ModelTrainer:
               val_y: np.ndarray,
               verbose: bool = True) -> Dict:
         """
-        Full training loop with early stopping
+        Full training loop with early stopping and GPU optimizations.
         
         Args:
             train_X: Training sequences
@@ -272,15 +326,22 @@ class ModelTrainer:
         train_dataset = ICUDataset(train_X, train_y)
         val_dataset = ICUDataset(val_X, val_y)
         
+        pin = (self.device.type == 'cuda')  # Faster CPU→GPU transfers
+        num_workers = 2 if pin else 0
+        
         train_loader = DataLoader(
-            train_dataset, batch_size=self.batch_size, shuffle=True
+            train_dataset, batch_size=self.batch_size, shuffle=True,
+            pin_memory=pin, num_workers=num_workers, persistent_workers=(num_workers > 0)
         )
         val_loader = DataLoader(
-            val_dataset, batch_size=self.batch_size, shuffle=False
+            val_dataset, batch_size=self.batch_size, shuffle=False,
+            pin_memory=pin, num_workers=num_workers, persistent_workers=(num_workers > 0)
         )
         
-        logger.info(f"Starting training on {self.device}...")
-        logger.info(f"Batch size: {self.batch_size}, Epochs: {self.epochs}")
+        eff_batch = self.batch_size * self.grad_accum_steps
+        logger.info(f"Training on {self.device} | "
+                    f"batch={self.batch_size}×{self.grad_accum_steps}={eff_batch} | "
+                    f"AMP={'ON' if self.use_amp else 'OFF'} | epochs={self.epochs}")
         
         for epoch in range(self.epochs):
             # Train
@@ -322,7 +383,7 @@ class ModelTrainer:
     
     def predict(self, X: np.ndarray) -> np.ndarray:
         """
-        Make predictions
+        Make predictions (uses AMP for speed).
         
         Args:
             X: Input sequences
@@ -337,9 +398,13 @@ class ModelTrainer:
         predictions = []
         with torch.no_grad():
             for sequences, _ in loader:
-                sequences = sequences.to(self.device)
-                pred = self.model(sequences)
-                predictions.append(pred.cpu().numpy())
+                sequences = sequences.to(self.device, non_blocking=True)
+                if self.use_amp:
+                    with autocast('cuda'):
+                        pred = self.model(sequences)
+                else:
+                    pred = self.model(sequences)
+                predictions.append(pred.float().cpu().numpy())
         
         return np.vstack(predictions)
     

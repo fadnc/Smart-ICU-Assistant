@@ -54,6 +54,16 @@ XGBOOST_CONFIG:
   learning_rate: 0.1
   n_estimators: 100
   subsample: 0.8
+  tree_method: gpu_hist    # Use GPU for XGBoost (fallback: auto for CPU)
+  gpu_id: 0
+
+# GPU training config (tuned for RTX 3050 4GB VRAM)
+GPU_CONFIG:
+  batch_size: 32           # Fits LSTM/TCN comfortably in 4GB
+  grad_accum_steps: 2      # Effective batch = 32 × 2 = 64
+  use_amp: true            # FP16 mixed precision (~2× memory savings)
+  pin_memory: true         # Faster CPU→GPU transfer
+  num_workers: 2           # DataLoader parallel workers
 
 # Alert thresholds
 RISK_THRESHOLDS:
