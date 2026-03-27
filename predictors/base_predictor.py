@@ -16,7 +16,7 @@ import yaml
 
 import torch
 from models import create_model, XGBoostPredictor
-from training import ModelTrainer, clear_gpu_memory
+from training import ModelTrainer, clear_gpu_memory, log_gpu_memory, temporal_split_data
 
 logger = logging.getLogger(__name__)
 
@@ -213,6 +213,7 @@ class BasePredictor(ABC):
         """Train a deep learning model (LSTM, TCN, Transformer)."""
         model = create_model(model_name, config)
         trainer = ModelTrainer(model, config)
+        log_gpu_memory(f"{self.TASK_NAME}/{model_name} init")
 
         # Temporal split
         splits = trainer.temporal_split(X, y, timestamps)
@@ -222,6 +223,7 @@ class BasePredictor(ABC):
 
         # Train
         trainer.train(train_X, train_y, val_X, val_y, verbose=False)
+        log_gpu_memory(f"{self.TASK_NAME}/{model_name} post-train")
 
         # Evaluate on test set
         predictions = trainer.predict(test_X)
@@ -256,10 +258,8 @@ class BasePredictor(ABC):
             gpu_id=xgb_config.get('gpu_id', 0),
         )
 
-        # Temporal split (use ModelTrainer just for splitting)
-        dummy_model = create_model('lstm', config)
-        trainer = ModelTrainer(dummy_model, config)
-        splits = trainer.temporal_split(X, y, timestamps)
+        # Temporal split (standalone — no dummy GPU model needed)
+        splits = temporal_split_data(X, y, timestamps)
         train_X, train_y = splits['train']
         val_X, val_y = splits['val']
         test_X, test_y = splits['test']
@@ -269,11 +269,21 @@ class BasePredictor(ABC):
 
         # Evaluate
         predictions = predictor.predict_proba(test_X)
-        metrics = trainer.compute_metrics(predictions, test_y)
+
+        # Compute per-task AUROC directly (no ModelTrainer needed)
+        from sklearn.metrics import roc_auc_score
+        metrics = {}
+        for t in range(test_y.shape[1]):
+            try:
+                if len(set(test_y[:, t])) > 1:
+                    metrics[f'task_{t}_auroc'] = roc_auc_score(test_y[:, t], predictions[:, t])
+                else:
+                    metrics[f'task_{t}_auroc'] = float('nan')
+            except Exception:
+                metrics[f'task_{t}_auroc'] = float('nan')
 
         aurocs = [v for k, v in metrics.items()
-                  if k.startswith('task_') and k.endswith('_auroc')
-                  and not np.isnan(v)]
+                  if k.endswith('_auroc') and not np.isnan(v)]
         mean_auroc = float(np.mean(aurocs)) if aurocs else 0.0
 
         # Save model
