@@ -662,7 +662,9 @@ def create_model(model_type: str, config: dict) -> nn.Module:
             max_depth=xgb_config.get('max_depth', 6),
             learning_rate=xgb_config.get('learning_rate', 0.1),
             n_estimators=xgb_config.get('n_estimators', 100),
-            subsample=xgb_config.get('subsample', 0.8)
+            subsample=xgb_config.get('subsample', 0.8),
+            tree_method=xgb_config.get('tree_method', 'auto'),
+            gpu_id=xgb_config.get('gpu_id', 0),
         )
     
     else:
