@@ -41,6 +41,29 @@ def clear_gpu_memory():
         torch.cuda.synchronize()
 
 
+def log_gpu_memory(tag: str = ""):
+    """Log current GPU memory usage."""
+    if torch.cuda.is_available():
+        alloc = torch.cuda.memory_allocated() / (1024**2)
+        cached = torch.cuda.memory_reserved() / (1024**2)
+        logger.info(f"[GPU {tag}] Allocated: {alloc:.0f}MB | Cached: {cached:.0f}MB")
+
+
+def temporal_split_data(sequences, labels, timestamps, train_ratio=0.7, val_ratio=0.15):
+    """Standalone temporal split — no ModelTrainer needed (for XGBoost etc.)."""
+    sorted_indices = np.argsort(timestamps)
+    sequences = sequences[sorted_indices]
+    labels = labels[sorted_indices]
+    n = len(sequences)
+    t_end = int(n * train_ratio)
+    v_end = int(n * (train_ratio + val_ratio))
+    return {
+        'train': (sequences[:t_end], labels[:t_end]),
+        'val':   (sequences[t_end:v_end], labels[t_end:v_end]),
+        'test':  (sequences[v_end:], labels[v_end:]),
+    }
+
+
 class ICUDataset(Dataset):
     """PyTorch Dataset for ICU time-series data"""
     
@@ -158,7 +181,11 @@ class ModelTrainer:
         
         logger.info(f"Temporal split: Train={len(train_X)}, Val={len(val_X)}, Test={len(test_X)}")
         
-        return (train_X, train_y), (val_X, val_y), (test_X, test_y)
+        return {
+            'train': (train_X, train_y),
+            'val': (val_X, val_y),
+            'test': (test_X, test_y),
+        }
     
     def train_epoch(self, train_loader: DataLoader) -> float:
         """
