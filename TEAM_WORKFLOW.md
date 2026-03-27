@@ -11,14 +11,14 @@ demo_ds ← SHARED BASE (both start from here)
 
 ## Task Assignment
 
-### 👩‍💻 Molyy (3 Tasks)
+### Raha (3 Tasks)
 | Task | File | Model | What to do |
 |------|------|-------|-----------|
 | **Mortality** (6/12/24h) | `predictors/mortality_predictor.py` | LSTM | Tune label logic, try XGBoost vs LSTM |
 | **AKI** (KDIGO stages 1-3) | `predictors/aki_predictor.py` | LSTM multiclass | Improve creatinine features, add urine output |
 | **ICU Readmission** | `predictors/readmission_predictor.py` | XGBoost + SHAP | Add more discharge features, interpretability |
 
-### 👨‍💻 Fadhi (5 Tasks)
+### Fadhil (5 Tasks)
 | Task | File | Model | What to do |
 |------|------|-------|-----------|
 | **Sepsis** (6/12/24h) | `predictors/sepsis_predictor.py` | Transformer/LSTM | SIRS + infection logic, cross-feature attention |
@@ -27,7 +27,7 @@ demo_ds ← SHARED BASE (both start from here)
 | **Hypotension** (1/3/6h) | `predictors/hypotension_predictor.py` | TCN | MAP < 65 mmHg, short-term patterns |
 | **Length of Stay** | `predictors/los_predictor.py` | XGBoost/LSTM | Short (<24h) vs Long (>72h) stay prediction |
 
-### 🤝 Shared (don't edit without coordinating)
+###  Shared (don't edit without coordinating)
 - `base_predictor.py` — shared training logic
 - `data_loader.py` — data loading
 - `feature_engineering.py` — feature extraction
