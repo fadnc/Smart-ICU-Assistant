@@ -54,6 +54,24 @@ class CompositePredictor(BasePredictor):
         """Composite doesn't generate its own labels — returns empty dict."""
         return {}
 
+    def _compute_task_groups(self, num_tasks: int) -> List[int]:
+        """Compute tasks_per_group dynamically to match the actual label count.
+        Known structure: mortality(3), sepsis(3), aki(6), hypotension(3),
+        vasopressor(2), ventilation(3), los(2) = 22.
+        Falls back to even split if count doesn't match."""
+        known_groups = [3, 3, 6, 3, 2, 3, 2]  # = 22
+        if sum(known_groups) == num_tasks:
+            return known_groups
+        # Fallback: split evenly into groups of ~3
+        groups = []
+        remaining = num_tasks
+        while remaining > 0:
+            g = min(3, remaining)
+            groups.append(g)
+            remaining -= g
+        logger.warning(f"Unknown label count {num_tasks}, using fallback groups: {groups}")
+        return groups
+
     def train_all_models(self, X, y, timestamps, output_dir='output'):
         """
         Train MultitaskLSTM on ALL labels simultaneously.
@@ -70,7 +88,12 @@ class CompositePredictor(BasePredictor):
 
         config = self.config.copy()
         config['input_size'] = input_size
-        config['num_tasks'] = num_tasks + 1  # +1 for composite score head
+        # Compute tasks_per_group dynamically from actual label structure
+        # Labels follow pattern: mortality(3), sepsis(3), aki(6), hypotension(3),
+        # vasopressor(2), ventilation(3), los(2) = 22
+        # MultitaskLSTM outputs num_tasks + 1 (extra composite score head)
+        config['num_tasks'] = num_tasks + 1
+        config['tasks_per_group'] = self._compute_task_groups(num_tasks)
 
         try:
             metrics = self._train_dl_model('multitask_lstm', X, y, timestamps, config)
