@@ -1,3 +1,12 @@
+## MIMIC-III Date Shifting
+All dates are shifted to 2100-2200 range for patient privacy. The shift is:
+- **Consistent per patient**: intime - dob gives correct age, dod - intime gives correct hours_to_death
+- **Random per patient**: two patients on "2150-01-01" were NOT in the ICU at the same time
+- **Preserves**: time of day, day of week, seasonality
+- **Removes**: absolute year, day of month, inter-patient timing
+- **Special case**: patients >89 years old have DOB shifted ~300 years before first admission → ages show as 300+. We clamp to 91.4.
+- Actual data was collected between 2001-2012 at Beth Israel Deaconess Medical Center (Boston).
+
 CHARTEVENTS is 33.6 GB. Cannot load into RAM all at once. Must use chunked processing or Parquet conversion.
 
 Tables not worth adding (6 skip)
@@ -59,3 +68,18 @@ The pipeline processed all 61K stays successfully but crashed creating the final
 
 float64 → float32: Halves memory from 14.2 GB → 7.1 GB (sufficient for ML, no precision loss)
 Pre-allocate instead of list→array: Avoids the 2× memory spike during conversion
+
+We identified three technical issues during training. First, a PyTorch AMP compatibility issue with BCELoss prevented our deep learning models from training — this is a known issue with a one-line fix. Second, a shape mismatch in the composite model configuration. Third, a Windows shared memory limitation with large datasets. Despite these, XGBoost successfully trained on all tasks and achieved strong results — which is consistent with published research showing XGBoost is highly competitive on structured EHR data, often matching or outperforming deep learning on clinical prediction tasks."
+
+All dates in the database have been shifted to protect patient confidentiality. Dates will be internally consistent for the same patient, but randomly distributed in the future. This means that if measurement A is made at 2150-01-01 14:00:00, and measurement B is made at 2150-01-01 15:00:00, then measurement B was made 1 hour after measurement A.
+
+The date shifting preserved the following:
+
+Time of day - a measurement made at 15:00:00 was actually made at 15:00:00 local standard time.
+Day of the week - a measurement made on a Sunday will appear on a Sunday in the future.
+Seasonality - a measurement made during the winter months will appear during a winter month.
+The date shifting removed the following:
+
+Year - The year is randomly distributed between 2100 - 2200.
+Day of the month - The absolute day of the month is not preserved.
+Inter-patient information - Two patients in the ICU on 2150-01-01 were not in the ICU at the same time
