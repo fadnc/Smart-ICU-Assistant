@@ -22,12 +22,10 @@ from predictors import (
     MortalityPredictor,
     SepsisPredictor,
     AKIPredictor,
-    HypotensionPredictor,
     VasopressorPredictor,
     VentilationPredictor,
     ReadmissionPredictor,
     LOSPredictor,
-    CompositePredictor,
 )
 
 logging.basicConfig(
@@ -51,18 +49,16 @@ class SmartICUPipeline:
         self.data_loader = MIMICDataLoader(data_dir, config_path)
         self.feature_engineer = FeatureEngineer(config_path)
 
-        # Initialize all predictors
+        # Initialize all predictors (7 tasks: 6 time-series + readmission)
         self.predictors = {
             'mortality':    MortalityPredictor(config_path),
             'sepsis':       SepsisPredictor(config_path),
             'aki':          AKIPredictor(config_path),
-            'hypotension':  HypotensionPredictor(config_path),
             'vasopressor':  VasopressorPredictor(config_path),
             'ventilation':  VentilationPredictor(config_path),
             'los':          LOSPredictor(config_path),
         }
         self.readmission_predictor = ReadmissionPredictor(config_path)
-        self.composite_predictor = CompositePredictor(config_path)
 
         # Collected data
         self.merged_data = None
@@ -322,14 +318,6 @@ class SmartICUPipeline:
             logger.info(f"{'─' * 50}")
             task_result = predictor.train_all_models(X, y, timestamps, output_dir)
             results[name] = task_result
-
-        # Composite (trains on all labels)
-        logger.info(f"\n{'─' * 50}")
-        logger.info(f"Training: Composite Deterioration Score")
-        logger.info(f"{'─' * 50}")
-        self.composite_predictor.set_all_labels(label_names)
-        composite_result = self.composite_predictor.train_all_models(X, y, timestamps, output_dir)
-        results['composite'] = composite_result
 
         return results
 
