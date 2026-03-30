@@ -335,24 +335,50 @@ class SmartICUPipeline:
 
     # ── Step 5: Readmission ────────────────────────────────────────────────
 
-    def train_readmission(self, output_dir='output'):
+    def train_readmission(self, output_dir='output', use_cache=True):
         """Train readmission predictor separately (tabular, not time-series)."""
         logger.info("=" * 60)
         logger.info("STEP 5: ICU Readmission Prediction")
         logger.info("=" * 60)
 
-        labels_df = self.readmission_predictor.extract_readmission_labels(
-            self.data_loader.icu_stays
-        )
-        features_df = self.readmission_predictor.extract_discharge_features(
-            self.merged_data,
-            self.data_loader.chartevents,
-            self.data_loader.labevents,
-            self.data_loader.diagnoses,
-            self.data_loader.prescriptions,
-            services=getattr(self.data_loader, 'services', None),
-            outputevents=getattr(self.data_loader, 'outputevents', None),
-        )
+        readmission_cache = self._cache_path('readmission_cache.pkl')
+
+        # Try cache first
+        if use_cache and os.path.exists(readmission_cache):
+            logger.info("Loading readmission features from cache...")
+            with open(readmission_cache, 'rb') as f:
+                cached = pickle.load(f)
+            features_df = cached['features_df']
+            labels_df = cached['labels_df']
+            self.readmission_predictor.feature_names = cached['feature_names']
+            logger.info(f"✓ Readmission cache loaded: {len(features_df)} stays")
+        else:
+            # Need full data for readmission feature extraction
+            if not hasattr(self, 'merged_data') or self.merged_data is None:
+                self.load_data()
+
+            labels_df = self.readmission_predictor.extract_readmission_labels(
+                self.data_loader.icu_stays
+            )
+            features_df = self.readmission_predictor.extract_discharge_features(
+                self.merged_data,
+                self.data_loader.chartevents,
+                self.data_loader.labevents,
+                self.data_loader.diagnoses,
+                self.data_loader.prescriptions,
+                services=getattr(self.data_loader, 'services', None),
+                outputevents=getattr(self.data_loader, 'outputevents', None),
+            )
+            # Cache for next run
+            os.makedirs(self.CACHE_DIR, exist_ok=True)
+            with open(readmission_cache, 'wb') as f:
+                pickle.dump({
+                    'features_df': features_df,
+                    'labels_df': labels_df,
+                    'feature_names': self.readmission_predictor.feature_names,
+                }, f)
+            logger.info("✓ Readmission features cached")
+
         result = self.readmission_predictor.train(features_df, labels_df, output_dir)
         return result
 
@@ -363,6 +389,7 @@ class SmartICUPipeline:
         os.makedirs(output_dir, exist_ok=True)
 
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+
         report = {
             'timestamp': ts,
             'data_dir': self.data_dir,
@@ -451,8 +478,6 @@ class SmartICUPipeline:
         if cached is not None:
             X, y, timestamps, label_names = cached
             logger.info("⚡ Skipped Steps 1-3 (loaded from cache)")
-            # Still need merged_data for readmission predictor
-            self.load_data()
         else:
             # 1. Load
             self.load_data()
@@ -471,8 +496,8 @@ class SmartICUPipeline:
         # 4. Train predictors
         results = self.train_all_predictors(X, y, timestamps, label_names)
 
-        # 5. Readmission
-        readmission_result = self.train_readmission()
+        # 5. Readmission (also uses its own cache)
+        readmission_result = self.train_readmission(use_cache=use_cache)
         results['readmission'] = readmission_result
 
         # 6. Save
