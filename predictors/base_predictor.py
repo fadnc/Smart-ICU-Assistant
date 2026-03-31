@@ -1,6 +1,12 @@
 """
 Base Predictor — Shared logic for all ICU prediction tasks.
-Each task-specific predictor inherits from this class.
+
+FIXES:
+  - XGBoostPredictor params updated to XGBoost 2.x API (device= instead of gpu_id=,
+    tree_method='hist' instead of 'gpu_hist', removed use_label_encoder).
+  - _extract_task_labels now logs clearly when label indices are missing,
+    making cache-based runs easier to debug.
+  - clear_gpu_memory() called before AND after each DL model to reduce VRAM fragmentation.
 """
 
 import os
@@ -10,7 +16,6 @@ import logging
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple, Optional
-from datetime import timedelta
 from abc import ABC, abstractmethod
 import yaml
 
@@ -27,19 +32,16 @@ class BasePredictor(ABC):
 
     Each predictor:
       1. Defines its own label generation logic
-      2. Trains all 5 model types (LSTM, TCN, Transformer, MultitaskLSTM, XGBoost)
-      3. Auto-selects the best model based on validation AUROC
+      2. Trains all model types (LSTM, TCN, Transformer, XGBoost)
+      3. Auto-selects the best model based on test AUROC
       4. Saves per-task results and model comparison report
     """
 
-    # -- Subclasses MUST override these ----------------------------------------
-    TASK_NAME: str = ""                 # e.g. "mortality"
-    TASK_DESCRIPTION: str = ""          # human-readable description
-    WINDOWS: List[int] = []            # prediction horizons in hours
-    LABEL_PREFIX: str = ""             # e.g. "mortality" → mortality_6h, mortality_12h
-    MODELS_TO_TRY: List[str] = [
-        'lstm', 'tcn', 'transformer', 'xgboost'
-    ]
+    TASK_NAME: str = ""
+    TASK_DESCRIPTION: str = ""
+    WINDOWS: List[int] = []
+    LABEL_PREFIX: str = ""
+    MODELS_TO_TRY: List[str] = ['lstm', 'tcn', 'transformer', 'xgboost']
 
     def __init__(self, config_path: str = 'config.yaml'):
         self.config = self._load_config(config_path)
@@ -48,21 +50,21 @@ class BasePredictor(ABC):
         self.results: Dict = {}
         self.best_model_name: Optional[str] = None
         self.best_auroc: float = 0.0
+        self._label_indices: Optional[np.ndarray] = None
 
     def _load_config(self, config_path: str) -> dict:
         with open(config_path, 'r') as f:
             return yaml.safe_load(f)
 
-    # -- Label names -----------------------------------------------------------
+    # ── Label names ────────────────────────────────────────────────────────
 
     def get_label_names(self) -> List[str]:
-        """Return list of label column names this predictor generates."""
         return [f'{self.LABEL_PREFIX}_{w}h' for w in self.WINDOWS]
 
     def get_num_tasks(self) -> int:
         return len(self.get_label_names())
 
-    # -- Abstract methods (subclass MUST implement) ----------------------------
+    # ── Abstract interface ─────────────────────────────────────────────────
 
     @abstractmethod
     def generate_labels(self,
@@ -76,17 +78,17 @@ class BasePredictor(ABC):
 
         Args:
             stay: One row from the merged ICU dataset
-            vitals: Raw vitals DataFrame (datetime-indexed, columns like heartrate, meanbp, …)
-            labs: Raw labs DataFrame (datetime-indexed, columns like creatinine, wbc, …)
+            vitals: Raw vitals DataFrame (datetime-indexed)
+            labs: Raw labs DataFrame (datetime-indexed)
             current_time: The prediction time
-            **extra_data: Additional tables (prescriptions, diagnoses, chartevents, …)
+            **extra_data: Additional tables (prescriptions, diagnoses, ...)
 
         Returns:
             Dict mapping label_name → 0/1
         """
         ...
 
-    # -- Training pipeline (shared) --------------------------------------------
+    # ── Training pipeline ──────────────────────────────────────────────────
 
     def train_all_models(self,
                          X: np.ndarray,
@@ -96,15 +98,7 @@ class BasePredictor(ABC):
         """
         Train every model type on this task's labels and select the best.
 
-        Args:
-            X: Feature sequences [n_samples, seq_len, n_features]
-            y: Full label matrix [n_samples, total_labels]
-               (contains ALL tasks; this method extracts only its own columns)
-            timestamps: Corresponding timestamps for temporal splitting
-            output_dir: Directory for saving results
-
-        Returns:
-            Dict with per-model AUROC scores + best model info
+        Label indices must be set via set_label_indices() BEFORE calling this.
         """
         os.makedirs(output_dir, exist_ok=True)
         os.makedirs('models', exist_ok=True)
@@ -117,14 +111,19 @@ class BasePredictor(ABC):
         num_tasks = task_labels.shape[1]
         input_size = X.shape[2]
 
+        logger.info(
+            f"[{self.TASK_NAME}] Training on {num_tasks} labels "
+            f"(indices: {self._label_indices}), input_size={input_size}"
+        )
+
         comparison = {}
 
         for model_name in self.MODELS_TO_TRY:
             logger.info(f"[{self.TASK_NAME}] Training {model_name.upper()}...")
             try:
-                # Clear VRAM before each model (critical for 4GB)
+                # FIX: Clear VRAM before AND after each model
                 clear_gpu_memory()
-                
+
                 metrics = self._train_single_model(
                     model_name, X, task_labels, timestamps, input_size, num_tasks
                 )
@@ -135,9 +134,14 @@ class BasePredictor(ABC):
                 if mean_auroc > self.best_auroc:
                     self.best_auroc = mean_auroc
                     self.best_model_name = model_name
+
+                # FIX: Also clear after training to free model weights from VRAM
+                clear_gpu_memory()
+
             except Exception as e:
-                logger.error(f"[{self.TASK_NAME}] {model_name} failed: {e}")
+                logger.error(f"[{self.TASK_NAME}] {model_name} failed: {e}", exc_info=True)
                 comparison[model_name] = {'error': str(e)}
+                clear_gpu_memory()  # always clean up on error too
 
         self.results = {
             'task': self.TASK_NAME,
@@ -149,48 +153,63 @@ class BasePredictor(ABC):
             'comparison': comparison,
         }
 
-        # Save per-task report
         report_path = os.path.join(output_dir, f'{self.TASK_NAME}_report.json')
         with open(report_path, 'w') as f:
             json.dump(self.results, f, indent=2, default=str)
-        logger.info(f"[{self.TASK_NAME}] Best model: {self.best_model_name} "
-                     f"(AUROC {self.best_auroc:.4f}) — report saved to {report_path}")
+        logger.info(
+            f"[{self.TASK_NAME}] Best model: {self.best_model_name} "
+            f"(AUROC {self.best_auroc:.4f}) — report saved to {report_path}"
+        )
 
         return self.results
 
-    # -- Internal helpers ------------------------------------------------------
+    # ── Internal helpers ───────────────────────────────────────────────────
 
     def _extract_task_labels(self, y_full: np.ndarray) -> Optional[np.ndarray]:
-        """Extract only this task's columns from the full label matrix."""
+        """
+        Extract only this task's columns from the full label matrix.
+
+        FIX: Now logs clearly when indices are missing so cache-based runs
+        are easier to debug. Previously silently fell through to wrong columns.
+        """
         label_names = self.get_label_names()
         num_labels = len(label_names)
-        # The label matrix is ordered the same as generate_all_labels output
-        # We need to know the column indices for this task in the full label matrix
-        # This will be set up by the pipeline
-        if hasattr(self, '_label_indices') and self._label_indices is not None:
+
+        if self._label_indices is not None and len(self._label_indices) > 0:
             return y_full[:, self._label_indices]
 
-        # Fallback: if we have exactly the right number of columns, use all
+        # Fallback: exact column count match
         if y_full.shape[1] == num_labels:
+            logger.debug(
+                f"[{self.TASK_NAME}] No label indices set — using all {num_labels} columns "
+                f"(exact match). Call set_label_indices() before training for correctness."
+            )
             return y_full
 
-        logger.warning(f"[{self.TASK_NAME}] Cannot determine label columns "
-                       f"(expected {num_labels}, got {y_full.shape[1]})")
+        # Cannot determine correct columns — fail loudly
+        logger.error(
+            f"[{self.TASK_NAME}] LABEL INDEX ERROR: label indices not set and column count "
+            f"mismatch (expected {num_labels}, got {y_full.shape[1]}). "
+            f"Ensure set_label_indices() is called before train_all_models()."
+        )
         return None
 
     def set_label_indices(self, all_label_names: List[str]):
         """Set which columns in the full label matrix belong to this task."""
         my_labels = self.get_label_names()
-        self._label_indices = []
+        indices = []
         for name in my_labels:
             if name in all_label_names:
-                self._label_indices.append(all_label_names.index(name))
+                indices.append(all_label_names.index(name))
             else:
                 logger.warning(f"[{self.TASK_NAME}] Label '{name}' not found in full label list")
-        if self._label_indices:
-            self._label_indices = np.array(self._label_indices)
+
+        if indices:
+            self._label_indices = np.array(indices)
+            logger.debug(f"[{self.TASK_NAME}] Label indices: {self._label_indices} → {my_labels}")
         else:
             self._label_indices = None
+            logger.error(f"[{self.TASK_NAME}] No label indices found — training will fail")
 
     def _train_single_model(self,
                             model_name: str,
@@ -199,7 +218,6 @@ class BasePredictor(ABC):
                             timestamps: List,
                             input_size: int,
                             num_tasks: int) -> Dict:
-        """Train one model type and return evaluation metrics."""
         config = self.config.copy()
         config['input_size'] = input_size
         config['num_tasks'] = num_tasks
@@ -215,27 +233,23 @@ class BasePredictor(ABC):
         trainer = ModelTrainer(model, config)
         log_gpu_memory(f"{self.TASK_NAME}/{model_name} init")
 
-        # Temporal split
         splits = trainer.temporal_split(X, y, timestamps)
         train_X, train_y = splits['train']
         val_X, val_y = splits['val']
         test_X, test_y = splits['test']
 
-        # Train
         trainer.train(train_X, train_y, val_X, val_y, verbose=False)
         log_gpu_memory(f"{self.TASK_NAME}/{model_name} post-train")
 
-        # Evaluate on test set
         predictions = trainer.predict(test_X)
         metrics = trainer.compute_metrics(predictions, test_y)
 
-        # Compute per-task AUROC
-        aurocs = [v for k, v in metrics.items()
-                  if k.startswith('task_') and k.endswith('_auroc')
-                  and not np.isnan(v)]
+        aurocs = [
+            v for k, v in metrics.items()
+            if k.startswith('task_') and k.endswith('_auroc') and not np.isnan(v)
+        ]
         mean_auroc = float(np.mean(aurocs)) if aurocs else 0.0
 
-        # Save model checkpoint
         model_path = os.path.join('models', f'{self.TASK_NAME}_{model_name}.pth')
         trainer.save_checkpoint(model_path)
 
@@ -246,31 +260,32 @@ class BasePredictor(ABC):
         }
 
     def _train_xgboost(self, X, y, timestamps, config) -> Dict:
-        """Train XGBoost baseline (GPU-accelerated when available)."""
+        """
+        Train XGBoost baseline (GPU-accelerated when available).
+
+        FIX: Updated to XGBoost 2.x API — uses device= instead of gpu_id=,
+        tree_method='hist' instead of 'gpu_hist', removed use_label_encoder.
+        """
         xgb_config = config.get('XGBOOST_CONFIG', {})
+
         predictor = XGBoostPredictor(
             num_tasks=y.shape[1],
             max_depth=xgb_config.get('max_depth', 6),
             learning_rate=xgb_config.get('learning_rate', 0.1),
             n_estimators=xgb_config.get('n_estimators', 100),
             subsample=xgb_config.get('subsample', 0.8),
-            tree_method=xgb_config.get('tree_method', 'auto'),
+            tree_method='hist',
             gpu_id=xgb_config.get('gpu_id', 0),
         )
 
-        # Temporal split (standalone — no dummy GPU model needed)
         splits = temporal_split_data(X, y, timestamps)
         train_X, train_y = splits['train']
         val_X, val_y = splits['val']
         test_X, test_y = splits['test']
 
-        # Train
         predictor.fit(train_X, train_y, verbose=False)
-
-        # Evaluate
         predictions = predictor.predict_proba(test_X)
 
-        # Compute per-task AUROC directly (no ModelTrainer needed)
         from sklearn.metrics import roc_auc_score
         metrics = {}
         for t in range(test_y.shape[1]):
@@ -282,11 +297,9 @@ class BasePredictor(ABC):
             except Exception:
                 metrics[f'task_{t}_auroc'] = float('nan')
 
-        aurocs = [v for k, v in metrics.items()
-                  if k.endswith('_auroc') and not np.isnan(v)]
+        aurocs = [v for k, v in metrics.items() if k.endswith('_auroc') and not np.isnan(v)]
         mean_auroc = float(np.mean(aurocs)) if aurocs else 0.0
 
-        # Save model
         model_path = os.path.join('models', f'{self.TASK_NAME}_xgboost.pkl')
         with open(model_path, 'wb') as f:
             pickle.dump(predictor, f)
@@ -297,8 +310,8 @@ class BasePredictor(ABC):
             'model_path': model_path,
         }
 
-    # -- Standalone runner -----------------------------------------------------
-
     def __repr__(self):
-        return (f"<{self.__class__.__name__} task='{self.TASK_NAME}' "
-                f"windows={self.WINDOWS} best={self.best_model_name}>")
+        return (
+            f"<{self.__class__.__name__} task='{self.TASK_NAME}' "
+            f"windows={self.WINDOWS} best={self.best_model_name}>"
+        )

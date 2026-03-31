@@ -7,7 +7,7 @@ MODEL_DIR: models
 
 # Preprocessing parameters
 TIME_WINDOWS:
-  mortality: [6, 12, 24]  # hours
+  mortality: [6, 12, 24]
   sepsis: [6, 12, 24]
   aki: [24, 48]
   vasopressor: [6, 12]
@@ -49,13 +49,18 @@ TCN_CONFIG:
   kernel_size: 3
   dropout: 0.3
 
+# FIX: Updated to XGBoost 2.x API.
+#   - Removed: gpu_id (use device instead)
+#   - Removed: tree_method: gpu_hist (deprecated)
+#   - Added:   device: cuda (replaces both gpu_id and gpu_hist)
+#   - tree_method: hist works for both CPU and GPU in XGBoost 2.x
 XGBOOST_CONFIG:
   max_depth: 6
   learning_rate: 0.1
   n_estimators: 100
   subsample: 0.8
-  tree_method: gpu_hist    # Use GPU for XGBoost (fallback: auto for CPU)
-  gpu_id: 0
+  tree_method: hist      # hist works for CPU and GPU (gpu_hist deprecated in 2.0)
+  device: cuda           # replaces gpu_id + gpu_hist; use 'cpu' if no GPU
 
 # GPU training config (tuned for RTX 3050 4GB VRAM)
 GPU_CONFIG:
@@ -103,11 +108,11 @@ VENTILATION_ITEMIDS:
 
 # Ventilation ICD-9 procedure codes
 VENTILATION_ICD_CODES:
-  - "9670"  # Continuous invasive mechanical ventilation, unspecified duration
-  - "9671"  # Continuous invasive mech vent < 96 hours
-  - "9672"  # Continuous invasive mech vent >= 96 hours
-  - "9604"  # Insertion of endotracheal tube
-  - "9390"  # Non-invasive mechanical ventilation
+  - "9670"
+  - "9671"
+  - "9672"
+  - "9604"
+  - "9390"
 
 # Vasopressor itemids for INPUTEVENTS_MV
 VASOPRESSOR_ITEMIDS:
@@ -127,3 +132,11 @@ URINE_OUTPUT_ITEMIDS:
   - 226560  # Void
   - 226561  # Condom Cath
   - 227489  # GU Irrigant/Round
+
+# Early stopping config
+# FIX: Increased patience from 10 → 20, added min_delta to prevent stopping
+# before the model has meaningfully converged. With 980K sequences and
+# batch_size=32, each epoch is long — 10 epochs was too aggressive.
+EARLY_STOPPING:
+  patience: 20       # was 10
+  min_delta: 0.0001  # minimum loss improvement to reset patience counter
