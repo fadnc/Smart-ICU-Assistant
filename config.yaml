@@ -1,11 +1,16 @@
 # Smart ICU Assistant Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+# GPU TARGET: NVIDIA A100-SXM4-80GB
+#   • 80 GB HBM2e  — batch sizes tuned to fill ~60 GB, leaving headroom
+#   • 312 TFLOPS BF16 / 77 TFLOPS FP32
+#   • NVLink + SXM form factor → peak memory bandwidth 2 TB/s
+#   • Use BF16 (not FP16) — A100 has native BF16 support, no loss scaling needed
+# ─────────────────────────────────────────────────────────────────────────────
 
-# Data paths (relative to project root)
 DATA_DIR: data
 OUTPUT_DIR: output
 MODEL_DIR: models
 
-# Preprocessing parameters
 TIME_WINDOWS:
   mortality: [6, 12, 24]
   sepsis: [6, 12, 24]
@@ -14,7 +19,6 @@ TIME_WINDOWS:
   ventilation: [6, 12, 24]
   hypotension: [1, 3, 6]
 
-# Feature extraction
 VITAL_SIGNS:
   - heartrate
   - sysbp
@@ -34,47 +38,63 @@ LAB_TESTS:
   - bicarbonate
   - chloride
 
-# Model parameters
+# ── Model parameters ──────────────────────────────────────────────────────────
+
 LSTM_CONFIG:
-  hidden_size: 128
-  num_layers: 2
+  hidden_size: 256        # was 128 — A100 has headroom, wider = better
+  num_layers: 3           # was 2
   dropout: 0.3
   bidirectional: true
   learning_rate: 0.001
-  batch_size: 64
+  batch_size: 2048        # was 64 — A100 80 GB handles this trivially
   epochs: 50
 
-# NOTE: TCN removed — BatchNorm1d collapses under FP16/AMP with imbalanced ICU labels.
-# Use lstm or xgboost for all tasks.
+TRANSFORMER_CONFIG:
+  d_model: 256            # was 128
+  nhead: 8
+  num_layers: 4           # was 3
+  dim_feedforward: 512    # was 256
+  dropout: 0.3
 
-# FIX: Updated to XGBoost 2.x API.
-#   - Removed: gpu_id (use device instead)
-#   - Removed: tree_method: gpu_hist (deprecated)
-#   - Added:   device: cuda (replaces both gpu_id and gpu_hist)
-#   - tree_method: hist works for both CPU and GPU in XGBoost 2.x
+# NOTE: TCN removed — BatchNorm1d collapses under AMP with imbalanced labels.
+
 XGBOOST_CONFIG:
   max_depth: 6
   learning_rate: 0.1
   n_estimators: 100
   subsample: 0.8
-  tree_method: hist      # hist works for CPU and GPU (gpu_hist deprecated in 2.0)
-  device: cuda           # replaces gpu_id + gpu_hist; use 'cpu' if no GPU
+  tree_method: hist
+  device: cuda
 
-# GPU training config (tuned for RTX 3050 4GB VRAM)
+# ── A100 GPU training config ──────────────────────────────────────────────────
+# Previous config was tuned for RTX 3050 4 GB. A100 changes:
+#
+#   batch_size        32  → 2048   64x larger — saturates HBM2e bandwidth
+#   grad_accum_steps   2  → 1      no simulation needed at batch 2048
+#   precision        fp16 → bf16   A100 native BF16, no loss scaler required
+#   num_workers        2  → 16     A100 nodes have 32-64 CPU cores
+#   prefetch_factor    -  → 4      pipeline 4 batches ahead per worker
+#   persistent_workers -  → true   avoid worker respawn (~5 s saved per epoch)
+#   torch_compile      -  → true   20-40% kernel fusion speedup on A100
+#   cudnn_benchmark    -  → true   auto-tune kernels on first batch (~30 s once)
+
 GPU_CONFIG:
-  batch_size: 32           # Fits LSTM comfortably in 4GB
-  grad_accum_steps: 2      # Effective batch = 32 × 2 = 64
-  use_amp: true            # FP16 mixed precision (~2× memory savings)
-  pin_memory: true         # Faster CPU→GPU transfer
-  num_workers: 2           # DataLoader parallel workers
+  batch_size: 2048
+  grad_accum_steps: 1
+  precision: bf16             # BF16 preferred on A100 (no GradScaler needed)
+  pin_memory: true
+  num_workers: 16
+  prefetch_factor: 4
+  persistent_workers: true
+  torch_compile: true         # torch.compile mode='reduce-overhead'
+  cudnn_benchmark: true
+  non_blocking_transfer: true
 
-# Alert thresholds
 RISK_THRESHOLDS:
   low: 0.3
   medium: 0.6
   high: 0.8
 
-# Clinical definitions
 SEPSIS_CRITERIA:
   temp_high: 38.3
   temp_low: 36.0
@@ -83,28 +103,25 @@ SEPSIS_CRITERIA:
   wbc_high: 12000
   wbc_low: 4000
 
-HYPOTENSION_THRESHOLD: 65  # MAP in mmHg
+HYPOTENSION_THRESHOLD: 65
 AKI_KDIGO_STAGES:
-  stage1_cr_increase: 0.3  # mg/dL
+  stage1_cr_increase: 0.3
   stage1_cr_ratio: 1.5
   stage2_cr_ratio: 2.0
   stage3_cr_ratio: 3.0
 
-# Transformer model config (for sepsis prediction)
 TRANSFORMER_CONFIG:
-  d_model: 128
+  d_model: 256
   nhead: 8
-  num_layers: 3
-  dim_feedforward: 256
+  num_layers: 4
+  dim_feedforward: 512
   dropout: 0.3
 
-# Ventilation detection itemids (from D_ITEMS)
 VENTILATION_ITEMIDS:
-  - 225792  # Invasive Ventilation
-  - 225794  # Non-invasive Ventilation
-  - 226260  # Mechanically Ventilated
+  - 225792
+  - 225794
+  - 226260
 
-# Ventilation ICD-9 procedure codes
 VENTILATION_ICD_CODES:
   - "9670"
   - "9671"
@@ -112,31 +129,27 @@ VENTILATION_ICD_CODES:
   - "9604"
   - "9390"
 
-# Vasopressor itemids for INPUTEVENTS_MV
 VASOPRESSOR_ITEMIDS:
-  - 221906  # Norepinephrine
-  - 221289  # Epinephrine
-  - 222315  # Vasopressin
-  - 221749  # Phenylephrine
-  - 221662  # Dopamine
+  - 221906
+  - 221289
+  - 222315
+  - 221749
+  - 221662
 
-# Urine output itemids for AKI (from OUTPUTEVENTS)
 URINE_OUTPUT_ITEMIDS:
-  - 40055   # Urine Out Foley
-  - 43175   # Urine
-  - 40069   # Urine Out Void
-  - 40094   # Urine Out Condom Cath
-  - 226559  # Foley
-  - 226560  # Void
-  - 226561  # Condom Cath
-  - 227489  # GU Irrigant/Round
+  - 40055
+  - 43175
+  - 40069
+  - 40094
+  - 226559
+  - 226560
+  - 226561
+  - 227489
 
-# Early stopping config
 EARLY_STOPPING:
-  patience: 20       # was 10
-  min_delta: 0.0001  # minimum loss improvement to reset patience counter
+  patience: 15
+  min_delta: 0.0001
 
-# Active model list (tcn removed)
 MODELS_TO_TRY:
   - lstm
   - transformer

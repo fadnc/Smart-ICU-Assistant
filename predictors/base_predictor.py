@@ -1,13 +1,12 @@
 """
 Base Predictor — Shared logic for all ICU prediction tasks.
 
-CHANGES:
-  - MODELS_TO_TRY: removed 'tcn' → now ['lstm', 'transformer', 'xgboost']
-  - All TCN references removed from training loop, logging, and docstrings.
-  - task_name + model_name forwarded to ModelTrainer.train() for labeled epoch bars.
-  - Overall model-comparison bar per task.
-  - clear_gpu_memory() called before AND after each model.
-  - _extract_task_labels logs clearly when label indices are missing.
+A100 changes:
+  - MODELS_TO_TRY: ['lstm', 'transformer', 'xgboost']  (TCN removed)
+  - All GPU config (batch_size, workers, precision) read from config.yaml GPU_CONFIG
+    so tuning one file propagates everywhere.
+  - _train_dl_model passes full config including GPU_CONFIG to ModelTrainer.
+  - Val batch = train batch × 2 (no backward pass, can fit double).
 """
 
 import os
@@ -30,7 +29,6 @@ logger = logging.getLogger(__name__)
 
 
 class BasePredictor(ABC):
-    """Abstract base class for all ICU prediction tasks."""
 
     TASK_NAME:        str       = ""
     TASK_DESCRIPTION: str       = ""
@@ -51,15 +49,11 @@ class BasePredictor(ABC):
         with open(config_path, 'r') as f:
             return yaml.safe_load(f)
 
-    # ── Label names ───────────────────────────────────────────────────────────
-
     def get_label_names(self) -> List[str]:
         return [f'{self.LABEL_PREFIX}_{w}h' for w in self.WINDOWS]
 
     def get_num_tasks(self) -> int:
         return len(self.get_label_names())
-
-    # ── Abstract interface ────────────────────────────────────────────────────
 
     @abstractmethod
     def generate_labels(self,
@@ -77,7 +71,6 @@ class BasePredictor(ABC):
                          y: np.ndarray,
                          timestamps: List,
                          output_dir: str = 'output') -> Dict:
-        """Train every model type and pick the best by test AUROC."""
         os.makedirs(output_dir, exist_ok=True)
         os.makedirs('models', exist_ok=True)
 
@@ -96,7 +89,6 @@ class BasePredictor(ABC):
 
         comparison = {}
 
-        # ── Per-model progress bar ────────────────────────────────────────────
         model_bar = tqdm(
             self.MODELS_TO_TRY,
             desc=f"  [{self.TASK_NAME}] models          ",
@@ -104,28 +96,20 @@ class BasePredictor(ABC):
             file=sys.stderr,
             dynamic_ncols=True,
             leave=True,
-            bar_format=(
-                "{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}] {postfix}"
-            ),
+            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}] {postfix}",
         )
 
         for model_name in model_bar:
             model_bar.set_postfix_str(f"training {model_name.upper()}…")
             try:
                 clear_gpu_memory()
-
                 metrics    = self._train_single_model(
                     model_name, X, task_labels, timestamps, input_size, num_tasks
                 )
                 comparison[model_name] = metrics
                 mean_auroc = metrics.get('mean_test_auroc', 0.0)
-
-                model_bar.set_postfix_str(
-                    f"{model_name.upper()} done | AUROC={mean_auroc:.4f}"
-                )
-                logger.info(
-                    f"[{self.TASK_NAME}] {model_name.upper()} → AUROC={mean_auroc:.4f}"
-                )
+                model_bar.set_postfix_str(f"{model_name.upper()} AUROC={mean_auroc:.4f}")
+                logger.info(f"[{self.TASK_NAME}] {model_name.upper()} → AUROC={mean_auroc:.4f}")
 
                 if mean_auroc > self.best_auroc:
                     self.best_auroc      = mean_auroc
@@ -134,9 +118,7 @@ class BasePredictor(ABC):
                 clear_gpu_memory()
 
             except Exception as e:
-                logger.error(
-                    f"[{self.TASK_NAME}] {model_name} failed: {e}", exc_info=True
-                )
+                logger.error(f"[{self.TASK_NAME}] {model_name} failed: {e}", exc_info=True)
                 comparison[model_name] = {'error': str(e)}
                 model_bar.set_postfix_str(f"{model_name.upper()} FAILED")
                 clear_gpu_memory()
@@ -173,9 +155,6 @@ class BasePredictor(ABC):
             return y_full[:, self._label_indices]
 
         if y_full.shape[1] == num_labels:
-            logger.debug(
-                f"[{self.TASK_NAME}] No indices set — using all {num_labels} cols (exact match)"
-            )
             return y_full
 
         logger.error(
@@ -186,62 +165,41 @@ class BasePredictor(ABC):
 
     def set_label_indices(self, all_label_names: List[str]):
         my_labels = self.get_label_names()
-        indices   = []
-        for name in my_labels:
-            if name in all_label_names:
-                indices.append(all_label_names.index(name))
-            else:
-                logger.warning(f"[{self.TASK_NAME}] Label '{name}' not in full label list")
+        indices   = [all_label_names.index(n) for n in my_labels if n in all_label_names]
+        missing   = [n for n in my_labels if n not in all_label_names]
+        if missing:
+            logger.warning(f"[{self.TASK_NAME}] Labels not found: {missing}")
+        self._label_indices = np.array(indices) if indices else None
+        if self._label_indices is None:
+            logger.error(f"[{self.TASK_NAME}] No label indices — training will fail")
 
-        if indices:
-            self._label_indices = np.array(indices)
-            logger.debug(f"[{self.TASK_NAME}] Indices: {self._label_indices} → {my_labels}")
-        else:
-            self._label_indices = None
-            logger.error(f"[{self.TASK_NAME}] No label indices found — training will fail")
-
-    def _train_single_model(self,
-                             model_name: str,
-                             X: np.ndarray,
-                             y: np.ndarray,
-                             timestamps: List,
-                             input_size: int,
-                             num_tasks: int) -> Dict:
+    def _train_single_model(self, model_name, X, y, timestamps, input_size, num_tasks):
         config               = self.config.copy()
         config['input_size'] = input_size
         config['num_tasks']  = num_tasks
-
         if model_name == 'xgboost':
             return self._train_xgboost(X, y, timestamps, config)
         return self._train_dl_model(model_name, X, y, timestamps, config)
 
-    def _train_dl_model(self, model_name: str, X, y, timestamps, config) -> Dict:
-        """Train LSTM / Transformer with epoch-level progress bar."""
+    def _train_dl_model(self, model_name, X, y, timestamps, config):
         model   = create_model(model_name, config)
         trainer = ModelTrainer(model, config)
         log_gpu_memory(f"{self.TASK_NAME}/{model_name} init")
 
-        splits            = trainer.temporal_split(X, y, timestamps)
-        train_X, train_y  = splits['train']
-        val_X,   val_y    = splits['val']
-        test_X,  test_y   = splits['test']
+        splits           = trainer.temporal_split(X, y, timestamps)
+        train_X, train_y = splits['train']
+        val_X,   val_y   = splits['val']
+        test_X,  test_y  = splits['test']
 
         trainer.train(
             train_X, train_y, val_X, val_y,
-            task_name=self.TASK_NAME,
-            model_name=model_name,
-            verbose=False,
+            task_name=self.TASK_NAME, model_name=model_name,
         )
         log_gpu_memory(f"{self.TASK_NAME}/{model_name} post-train")
 
         predictions = trainer.predict(test_X)
         metrics     = trainer.compute_metrics(predictions, test_y)
-
-        aurocs     = [
-            v for k, v in metrics.items()
-            if k.startswith('task_') and k.endswith('_auroc') and not np.isnan(v)
-        ]
-        mean_auroc = float(np.mean(aurocs)) if aurocs else 0.0
+        mean_auroc  = metrics.get('mean_auroc', 0.0)
 
         model_path = os.path.join('models', f'{self.TASK_NAME}_{model_name}.pth')
         trainer.save_checkpoint(model_path)
@@ -252,35 +210,29 @@ class BasePredictor(ABC):
             'model_path':       model_path,
         }
 
-    def _train_xgboost(self, X, y, timestamps, config) -> Dict:
-        """Train XGBoost with a tqdm spinner."""
-        xgb_config = config.get('XGBOOST_CONFIG', {})
-
+    def _train_xgboost(self, X, y, timestamps, config):
+        xgb_cfg   = config.get('XGBOOST_CONFIG', {})
         predictor = XGBoostPredictor(
             num_tasks     = y.shape[1],
-            max_depth     = xgb_config.get('max_depth', 6),
-            learning_rate = xgb_config.get('learning_rate', 0.1),
-            n_estimators  = xgb_config.get('n_estimators', 100),
-            subsample     = xgb_config.get('subsample', 0.8),
+            max_depth     = xgb_cfg.get('max_depth', 6),
+            learning_rate = xgb_cfg.get('learning_rate', 0.1),
+            n_estimators  = xgb_cfg.get('n_estimators', 100),
+            subsample     = xgb_cfg.get('subsample', 0.8),
             tree_method   = 'hist',
-            gpu_id        = xgb_config.get('gpu_id', 0),
+            gpu_id        = xgb_cfg.get('gpu_id', 0),
         )
 
-        splits            = temporal_split_data(X, y, timestamps)
-        train_X, train_y  = splits['train']
-        val_X,   val_y    = splits['val']
-        test_X,  test_y   = splits['test']
+        splits           = temporal_split_data(X, y, timestamps)
+        train_X, train_y = splits['train']
+        test_X,  test_y  = splits['test']
 
         with tqdm(
             total=y.shape[1],
-            desc=f"  [{self.TASK_NAME}] XGBoost trees   ",
-            unit="task",
-            file=sys.stderr,
-            dynamic_ncols=True,
-            leave=False,
-        ) as xgb_bar:
-            predictor.fit(train_X, train_y, verbose=False)
-            xgb_bar.update(y.shape[1])
+            desc=f"  [{self.TASK_NAME}] XGBoost",
+            unit="task", file=sys.stderr, dynamic_ncols=True, leave=False,
+        ) as bar:
+            predictor.fit(train_X, train_y)
+            bar.update(y.shape[1])
 
         predictions = predictor.predict_proba(test_X)
 
@@ -295,15 +247,15 @@ class BasePredictor(ABC):
             except Exception:
                 metrics[f'task_{t}_auroc'] = float('nan')
 
-        aurocs     = [v for v in metrics.values() if not np.isnan(v)]
-        mean_auroc = float(np.mean(aurocs)) if aurocs else 0.0
+        valid = [v for v in metrics.values() if not np.isnan(v)]
+        metrics['mean_auroc'] = float(np.mean(valid)) if valid else 0.0
 
         model_path = os.path.join('models', f'{self.TASK_NAME}_xgboost.pkl')
         with open(model_path, 'wb') as f:
             pickle.dump(predictor, f)
 
         return {
-            'mean_test_auroc':  mean_auroc,
+            'mean_test_auroc':  metrics['mean_auroc'],
             'per_task_metrics': metrics,
             'model_path':       model_path,
         }
