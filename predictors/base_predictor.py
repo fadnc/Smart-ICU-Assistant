@@ -2,11 +2,14 @@
 Base Predictor — Shared logic for all ICU prediction tasks.
 
 CHANGES:
-  - task_name + model_name forwarded to ModelTrainer.train() for labeled epoch bars
-  - Overall model-comparison bar per task (lstm → tcn → transformer → xgboost)
-  - XGBoost training wrapped in a tqdm spinner so it's clear when it's running
-  - clear_gpu_memory() called before AND after each model
-  - _extract_task_labels logs clearly when label indices are missing
+  - MODELS_TO_TRY: removed 'tcn'. Now ['lstm', 'transformer', 'xgboost'].
+    TCN removed because BatchNorm1d collapses under FP16 AMP with rare ICU labels,
+    producing NaN loss from epoch 2-7 on every task and wasting ~3h per run.
+  - task_name + model_name forwarded to ModelTrainer.train() for labeled epoch bars.
+  - Overall model-comparison bar per task.
+  - XGBoost training wrapped in a tqdm spinner.
+  - clear_gpu_memory() called before AND after each model.
+  - _extract_task_labels logs clearly when label indices are missing.
 """
 
 import os
@@ -35,16 +38,18 @@ class BasePredictor(ABC):
     TASK_DESCRIPTION: str       = ""
     WINDOWS:          List[int] = []
     LABEL_PREFIX:     str       = ""
-    MODELS_TO_TRY:    List[str] = ['lstm', 'tcn', 'transformer', 'xgboost']
+
+    # TCN removed — BatchNorm1d → NaN loss under FP16 AMP with imbalanced labels
+    MODELS_TO_TRY: List[str] = ['lstm', 'transformer', 'xgboost']
 
     def __init__(self, config_path: str = 'config.yaml'):
-        self.config       = self._load_config(config_path)
-        self.config_path  = config_path
+        self.config      = self._load_config(config_path)
+        self.config_path = config_path
         self.time_windows = self.config.get('TIME_WINDOWS', {})
-        self.results:          Dict             = {}
-        self.best_model_name:  Optional[str]   = None
-        self.best_auroc:       float            = 0.0
-        self._label_indices:   Optional[np.ndarray] = None
+        self.results:         Dict             = {}
+        self.best_model_name: Optional[str]   = None
+        self.best_auroc:      float            = 0.0
+        self._label_indices:  Optional[np.ndarray] = None
 
     def _load_config(self, config_path: str) -> dict:
         with open(config_path, 'r') as f:
@@ -89,13 +94,13 @@ class BasePredictor(ABC):
         input_size = X.shape[2]
 
         logger.info(
-            f"[{self.TASK_NAME}] Training {len(self.MODELS_TO_TRY)} models | "
+            f"[{self.TASK_NAME}] Training {len(self.MODELS_TO_TRY)} models "
+            f"(lstm / transformer / xgboost) | "
             f"{num_tasks} labels | input_size={input_size}"
         )
 
         comparison = {}
 
-        # ── Per-model progress bar ────────────────────────────────────────────
         model_bar = tqdm(
             self.MODELS_TO_TRY,
             desc=f"  [{self.TASK_NAME}] models          ",
@@ -113,7 +118,7 @@ class BasePredictor(ABC):
             try:
                 clear_gpu_memory()
 
-                metrics = self._train_single_model(
+                metrics    = self._train_single_model(
                     model_name, X, task_labels, timestamps, input_size, num_tasks
                 )
                 comparison[model_name] = metrics
@@ -215,17 +220,16 @@ class BasePredictor(ABC):
         return self._train_dl_model(model_name, X, y, timestamps, config)
 
     def _train_dl_model(self, model_name: str, X, y, timestamps, config) -> Dict:
-        """Train LSTM / TCN / Transformer with epoch-level progress bar."""
+        """Train LSTM / Transformer with epoch-level progress bar."""
         model   = create_model(model_name, config)
         trainer = ModelTrainer(model, config)
         log_gpu_memory(f"{self.TASK_NAME}/{model_name} init")
 
-        splits            = trainer.temporal_split(X, y, timestamps)
-        train_X, train_y  = splits['train']
-        val_X, val_y      = splits['val']
-        test_X, test_y    = splits['test']
+        splits           = trainer.temporal_split(X, y, timestamps)
+        train_X, train_y = splits['train']
+        val_X,   val_y   = splits['val']
+        test_X,  test_y  = splits['test']
 
-        # Pass task_name + model_name so the epoch bar has a meaningful label
         trainer.train(
             train_X, train_y, val_X, val_y,
             task_name=self.TASK_NAME,
@@ -237,7 +241,7 @@ class BasePredictor(ABC):
         predictions = trainer.predict(test_X)
         metrics     = trainer.compute_metrics(predictions, test_y)
 
-        aurocs     = [
+        aurocs = [
             v for k, v in metrics.items()
             if k.startswith('task_') and k.endswith('_auroc') and not np.isnan(v)
         ]
@@ -253,7 +257,7 @@ class BasePredictor(ABC):
         }
 
     def _train_xgboost(self, X, y, timestamps, config) -> Dict:
-        """Train XGBoost with a tqdm spinner so the user knows it's running."""
+        """Train XGBoost with a tqdm spinner."""
         xgb_config = config.get('XGBOOST_CONFIG', {})
 
         predictor = XGBoostPredictor(
@@ -266,12 +270,11 @@ class BasePredictor(ABC):
             gpu_id        = xgb_config.get('gpu_id', 0),
         )
 
-        splits            = temporal_split_data(X, y, timestamps)
-        train_X, train_y  = splits['train']
-        val_X,   val_y    = splits['val']
-        test_X,  test_y   = splits['test']
+        splits           = temporal_split_data(X, y, timestamps)
+        train_X, train_y = splits['train']
+        val_X,   val_y   = splits['val']
+        test_X,  test_y  = splits['test']
 
-        # Spinner-style bar for XGBoost (indeterminate duration)
         with tqdm(
             total=y.shape[1],
             desc=f"  [{self.TASK_NAME}] XGBoost trees   ",
@@ -280,10 +283,6 @@ class BasePredictor(ABC):
             dynamic_ncols=True,
             leave=False,
         ) as xgb_bar:
-            # Monkey-patch fit to update bar per task
-            orig_fit = predictor.fit.__func__ if hasattr(predictor.fit, '__func__') else None
-
-            # Simple approach: fit all, then update bar at end
             predictor.fit(train_X, train_y, verbose=False)
             xgb_bar.update(y.shape[1])
 

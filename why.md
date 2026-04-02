@@ -106,30 +106,29 @@ _extract_task_labels now logs an explicit error when indices are missing instead
 
 config.yaml — Updated XGBoost block + early stopping params
 gpu_id and tree_method: gpu_hist replaced with device: cuda and tree_method: hist. New EARLY_STOPPING section added with patience: 20 and min_delta: 0.0001 for documentation/reference.
-
+------------------
+1/4
 training.py — Three fixes for NaN loss:
-
 Gradient clipping (clip_grad_norm_(max_norm=1.0)) so exploding gradients can't produce inf/NaN loss
 Epoch bar now shows train=X.XXXX | val=X.XXXX | auroc=X.XXXX | pat=N/20 live
 Per-batch inner bar (disappears after each epoch) shows individual batch loss
 task_name/model_name forwarded from trainer so bars are labeled (e.g. [mortality/lstm] epochs)
 
 data_loader.py — Progress bars everywhere:
-
 All small tables (PATIENTS, ADMISSIONS, etc.) show a row-count bar
 CHARTEVENTS chunked load shows an MB-based bar with live "kept rows" counter
 LABEVENTS chunked load shows a similar bar
 merge_data() has an overall 17-step pipeline bar
 
 base_predictor.py — Per-task and per-model bars:
-
 Each task shows a 4-step model comparison bar (lstm → tcn → transformer → xgboost)
 Postfix shows live AUROC as each model finishes
 
 main_pipeline.py — Three major changes:
-
 _normalize_X() called after building the feature array (StandardScaler, fixes NaN loss at root)
 Stay-level progress bar during feature extraction showing sequences collected
 Top-level 4-step pipeline bar
 
 normalize_cache.py — New utility to fix an existing un-normalized cache without re-running the 2-8 hour extraction.
+
+Why TCN fails on every task: TCNBlock uses nn.BatchNorm1d. Under FP16 AMP with severely imbalanced labels (rare events like vasopressor or AKI Stage 3), entire mini-batches can have all-zero labels. BatchNorm's running mean/variance collapses to zero, the normalization divides near-zero by near-zero, and you get NaN from epoch 2-7 onward. The fix is one line — replace nn.BatchNorm1d with nn.GroupNorm(1, out_channels) — but for this run, TCN is wasting roughly 3 hours per task.

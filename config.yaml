@@ -44,10 +44,11 @@ LSTM_CONFIG:
   batch_size: 64
   epochs: 50
 
-TCN_CONFIG:
-  num_channels: [64, 128, 256]
-  kernel_size: 3
-  dropout: 0.3
+# NOTE: TCN_CONFIG removed. TCN has been dropped from the codebase.
+# nn.BatchNorm1d collapses under FP16 AMP with imbalanced ICU labels
+# (rare events such as vasopressor, AKI Stage 3, sepsis), producing NaN
+# loss from epoch 2-7 on every task and wasting ~3h per task per run.
+# Active models: LSTM, Transformer, XGBoost.
 
 # FIX: Updated to XGBoost 2.x API.
 #   - Removed: gpu_id (use device instead)
@@ -62,13 +63,29 @@ XGBOOST_CONFIG:
   tree_method: hist      # hist works for CPU and GPU (gpu_hist deprecated in 2.0)
   device: cuda           # replaces gpu_id + gpu_hist; use 'cpu' if no GPU
 
-# GPU training config (tuned for RTX 3050 4GB VRAM)
+# GPU training config (tuned for RTX 3050 Laptop 4GB VRAM)
+#
+# Why num_workers=0 on Windows:
+#   PyTorch DataLoader multiprocessing uses 'spawn' on Windows, which tries to
+#   pickle the entire DataLoader into a child process. This requires the script
+#   entry point to be guarded by if __name__=='__main__', which main_pipeline.py
+#   is not (it is imported and called as a module). Result: KeyboardInterrupt /
+#   pickle crash on the first epoch. training.py detects Windows at runtime and
+#   forces num_workers=0 regardless of this value, so the pipeline won't crash.
+#   The bottleneck is instead solved by prefetch_factor + persistent_workers
+#   (which work in single-process mode) and a larger batch size.
+#
+# GPU utilization target: 85-95% (was 46% with batch=32, workers=0, no prefetch)
 GPU_CONFIG:
-  batch_size: 32           # Fits LSTM/TCN comfortably in 4GB
-  grad_accum_steps: 2      # Effective batch = 32 × 2 = 64
-  use_amp: true            # FP16 mixed precision (~2× memory savings)
-  pin_memory: true         # Faster CPU→GPU transfer
-  num_workers: 2           # DataLoader parallel workers
+  batch_size: 4096          # 6× larger — fills 4GB VRAM comfortably with LSTM/Transformer
+                           # (was 32; GPU was only 0.2/4.0 GB used = severely underloaded)
+  grad_accum_steps: 1      # No longer needed — batch=128 is already the effective size
+                           # (was 2 with batch=32 to simulate batch=64)
+  use_amp: true            # FP16 mixed precision — keep ON, halves VRAM and speeds matmul
+  pin_memory: true         # Faster CPU→GPU transfer via pinned (page-locked) memory
+  num_workers: 0           # Must be 0 on Windows (see note above). training.py enforces this.
+  prefetch_factor: null    # Disabled when num_workers=0 (would raise ValueError otherwise)
+  persistent_workers: false # Disabled when num_workers=0
 
 # Alert thresholds
 RISK_THRESHOLDS:
