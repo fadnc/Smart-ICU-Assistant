@@ -46,13 +46,18 @@ class ReadmissionPredictor:
         with open(config_path, 'r') as f:
             self.config = yaml.safe_load(f)
         xgb_cfg = self.config.get('XGBOOST_CONFIG', {})
+        import torch as _torch
+        use_gpu = _torch.cuda.is_available()
+        device  = f'cuda:{xgb_cfg.get("gpu_id", 0)}' if use_gpu else 'cpu'
+
         self.model = xgb.XGBClassifier(
             max_depth=xgb_cfg.get('max_depth', 6),
             learning_rate=xgb_cfg.get('learning_rate', 0.1),
             n_estimators=xgb_cfg.get('n_estimators', 100),
             subsample=xgb_cfg.get('subsample', 0.8),
-            use_label_encoder=False,
             eval_metric='logloss',
+            tree_method='hist',
+            device=device,
             random_state=42,
         )
         self.feature_names: List[str] = []
@@ -185,10 +190,19 @@ class ReadmissionPredictor:
         )
 
         self.model.fit(X_train, y_train)
-        y_pred = self.model.predict_proba(X_test)[:, 1]
+        y_prob = self.model.predict_proba(X_test)[:, 1]
+        y_pred = (y_prob >= 0.5).astype(int)
 
-        auroc = roc_auc_score(y_test, y_pred) if len(set(y_test)) > 1 else float('nan')
-        auprc = average_precision_score(y_test, y_pred) if len(set(y_test)) > 1 else float('nan')
+        # Comprehensive metrics (matching all other predictors)
+        from sklearn.metrics import f1_score, recall_score, brier_score_loss
+        auroc = roc_auc_score(y_test, y_prob) if len(set(y_test)) > 1 else float('nan')
+        auprc = average_precision_score(y_test, y_prob) if len(set(y_test)) > 1 else float('nan')
+        f1    = f1_score(y_test, y_pred, zero_division=0)
+        sens  = recall_score(y_test, y_pred, zero_division=0)
+        tn = ((y_pred == 0) & (y_test == 0)).sum()
+        fp = ((y_pred == 1) & (y_test == 0)).sum()
+        spec  = float(tn / (tn + fp)) if (tn + fp) > 0 else 0.0
+        brier = brier_score_loss(y_test, y_prob)
 
         # SHAP
         try:
@@ -212,7 +226,10 @@ class ReadmissionPredictor:
         except ImportError:
             logger.info("SHAP not available — using built-in feature importance")
 
-        logger.info(f"Readmission AUROC: {auroc:.4f}")
+        logger.info(
+            f"Readmission | AUROC={auroc:.4f} AUPRC={auprc:.4f} "
+            f"F1={f1:.4f} Sens={sens:.4f} Spec={spec:.4f} Brier={brier:.4f}"
+        )
 
         # Save model
         model_path = os.path.join('models', 'readmission_xgboost.pkl')
@@ -224,6 +241,10 @@ class ReadmissionPredictor:
             'best_model': 'xgboost',
             'auroc': auroc,
             'auprc': auprc,
+            'f1': f1,
+            'sensitivity': sens,
+            'specificity': spec,
+            'brier': brier,
             'readmission_rate': float(n_pos / len(y_label)),
             'n_samples': len(y_label),
             'model_path': model_path,

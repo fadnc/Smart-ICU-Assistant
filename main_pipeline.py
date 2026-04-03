@@ -327,29 +327,27 @@ class SmartICUPipeline:
         # ── Overall task progress bar ─────────────────────────────────────────
         task_bar = tqdm(
             predictors_list,
-            desc="  Overall task progress             ",
+            desc="  Tasks",
             unit="task",
             file=sys.stderr,
             dynamic_ncols=True,
             leave=True,
             bar_format=(
-                "{l_bar}{bar}| {n_fmt}/{total_fmt} tasks "
+                "{l_bar}{bar:25}| {n_fmt}/{total_fmt} "
                 "[{elapsed}<{remaining}] {postfix}"
             ),
         )
 
         for name, predictor in task_bar:
-            task_bar.set_postfix_str(f"training {name}…")
-            logger.info(f"\n{'─'*50}")
-            logger.info(f"TASK: {predictor.TASK_DESCRIPTION}")
-            logger.info(f"{'─'*50}")
+            task_bar.set_postfix_str(f"▶ {name}")
+            logger.info(f"\n── {name}: {predictor.TASK_DESCRIPTION}")
 
             task_result  = predictor.train_all_models(X, y, timestamps, output_dir)
             results[name] = task_result
 
             best = task_result.get('best_model', '?')
             auroc= task_result.get('best_auroc', 0)
-            task_bar.set_postfix_str(f"{name} ✓ best={best} AUROC={auroc:.4f}")
+            task_bar.set_postfix_str(f"{name} ✓ {best} ({auroc:.4f})")
 
         task_bar.close()
         return results
@@ -558,20 +556,25 @@ class SmartICUPipeline:
         logger.info(f"{'='*60}")
 
     def print_summary(self, results):
-        logger.info(f"\n{'='*60}")
-        logger.info("RESULTS SUMMARY — BEST MODEL PER TASK")
-        logger.info(f"{'='*60}")
+        logger.info(f"\n{'='*70}")
+        logger.info("RESULTS SUMMARY")
+        logger.info(f"{'='*70}")
+        logger.info(f"  {'Task':<15s} {'Model':<14s} {'AUROC':>7s} {'AUPRC':>7s} {'F1':>7s} {'Sens':>7s}")
+        logger.info(f"  {'─'*13}   {'─'*12}   {'─'*5}   {'─'*5}   {'─'*5}   {'─'*5}")
         for name, result in results.items():
             if isinstance(result, dict) and 'best_model' in result:
-                best  = result.get('best_model', 'N/A')
-                auroc = result.get('best_auroc', result.get('auroc', 0))
-                logger.info(f"  {name:20s} → {str(best):20s} AUROC: {auroc:.4f}")
+                best = result.get('best_model', 'N/A')
                 for mname, mmetrics in result.get('comparison', {}).items():
                     if isinstance(mmetrics, dict) and 'mean_test_auroc' in mmetrics:
-                        marker = " ★" if mname == best else "  "
+                        pm = mmetrics.get('per_task_metrics', {})
+                        auroc = mmetrics.get('mean_test_auroc', 0)
+                        auprc = pm.get('macro_auprc', 0)
+                        f1    = pm.get('macro_f1', 0)
+                        sens  = pm.get('macro_sensitivity', 0)
+                        star  = " ★" if mname == best else "  "
                         logger.info(
-                            f"    {marker} {mname:18s} "
-                            f"{mmetrics['mean_test_auroc']:.4f}"
+                            f"  {name:<15s}{star}{mname:<12s} "
+                            f"{auroc:>7.4f} {auprc:>7.4f} {f1:>7.4f} {sens:>7.4f}"
                         )
 
 

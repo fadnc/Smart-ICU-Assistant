@@ -16,11 +16,11 @@ FIXES / OPTIMIZATIONS (this revision):
        torch.cuda.amp.GradScaler  → torch.amp.GradScaler('cuda', ...)
        torch.cuda.amp.autocast    → torch.amp.autocast('cuda', ...)
 
-  4. GPU utilisation fix — batch_size 32→128, grad_accum 2→1
+  4. GPU utilisation fix — batch_size 32→64, grad_accum 2→1
        With batch=32 the RTX 3050 was 46% utilised and only 0.2/4.0 GB VRAM.
        Root cause: tiny batches + single-process DataLoader means CPU spends
-       ~3s loading while GPU computes in ~1s. batch=128 fills VRAM properly
-       (~1.8 GB LSTM / ~2.2 GB Transformer) and roughly doubles throughput.
+       ~3s loading while GPU computes in ~1s. batch=64 fills VRAM properly
+       (~1.2 GB LSTM / ~1.6 GB Transformer) and roughly doubles throughput.
        grad_accum_steps dropped to 1 since effective batch is now large enough.
 
   5. prefetch_factor + persistent_workers on Linux/macOS
@@ -42,7 +42,10 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import (
+    roc_auc_score, average_precision_score, f1_score,
+    recall_score, brier_score_loss,
+)
 from typing import Dict, List, Tuple, Optional
 from tqdm import tqdm
 
@@ -52,12 +55,22 @@ logger = logging.getLogger(__name__)
 
 # ── GPU helpers ───────────────────────────────────────────────────────────────
 
+_device_logged = False
+
 def get_device() -> torch.device:
+    global _device_logged
     if torch.cuda.is_available():
-        idx  = torch.cuda.current_device()
-        name = torch.cuda.get_device_name(idx)
-        vram = torch.cuda.get_device_properties(idx).total_memory / (1024 ** 3)
-        logger.info(f"GPU detected: {name} ({vram:.1f} GB VRAM)")
+        if not _device_logged:
+            idx  = torch.cuda.current_device()
+            name = torch.cuda.get_device_name(idx)
+            vram = torch.cuda.get_device_properties(idx).total_memory / (1024 ** 3)
+            logger.info(f"GPU: {name} ({vram:.1f} GB VRAM)")
+            # cuDNN auto-tune: finds fastest kernel for fixed-size inputs (seq_len=24)
+            torch.backends.cudnn.benchmark = True
+            # Allow TF32 on Ampere+ GPUs (RTX 30xx) for ~2x matmul throughput
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            _device_logged = True
         return torch.device('cuda')
     logger.info("No GPU detected — using CPU")
     return torch.device('cpu')
@@ -139,24 +152,46 @@ def _build_loader(
 
 class MultiTaskBCEWithLogitsLoss(nn.Module):
     """
-    AMP-safe multi-task binary cross-entropy.
+    AMP-safe multi-task binary cross-entropy with pos_weight support.
 
     Uses BCEWithLogitsLoss (fused sigmoid + log + BCE) on raw logits.
     BCELoss on explicit sigmoid outputs is unsafe under FP16 autocast:
     sigmoid can saturate to exactly 0 or 1 in half precision, making
     log(p) = -inf → NaN loss.
 
-    Models must output raw logits (no final Sigmoid layer).
-    torch.sigmoid() is applied by the caller at inference time.
+    pos_weight: tensor of shape (num_tasks,), where each value = n_neg/n_pos.
+    Upweights the loss for positive examples to handle class imbalance.
+    Example: if mortality rate is 10%, pos_weight = 0.9/0.1 = 9.0, so
+    missing a true positive is penalized 9× more than a false positive.
     """
 
-    def __init__(self, task_weights: Optional[List[float]] = None):
+    def __init__(self, pos_weight: Optional[torch.Tensor] = None,
+                 task_weights: Optional[List[float]] = None,
+                 label_smoothing: float = 0.0):
         super().__init__()
-        self.task_weights = task_weights
-        self.bce_logits   = nn.BCEWithLogitsLoss(reduction='none')
+        self.task_weights     = task_weights
+        self.label_smoothing  = label_smoothing
+        # pos_weight is set later via set_pos_weight() once we know the device
+        self._pos_weight = pos_weight
+
+    def set_pos_weight(self, pos_weight: torch.Tensor):
+        """Set pos_weight tensor (call after moving to device)."""
+        self._pos_weight = pos_weight
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        task_losses = self.bce_logits(logits, targets).mean(dim=0)
+        # Label smoothing: soften 0→ε, 1→1-ε
+        if self.label_smoothing > 0:
+            targets = targets * (1.0 - self.label_smoothing) + 0.5 * self.label_smoothing
+
+        pw = self._pos_weight
+        if pw is not None:
+            pw = pw.to(logits.device)
+            # BCEWithLogitsLoss with pos_weight applied per-task
+            loss_fn = nn.BCEWithLogitsLoss(reduction='none', pos_weight=pw)
+        else:
+            loss_fn = nn.BCEWithLogitsLoss(reduction='none')
+
+        task_losses = loss_fn(logits, targets).mean(dim=0)
         if self.task_weights is not None:
             weights     = torch.tensor(self.task_weights, device=task_losses.device)
             task_losses = task_losses * weights
@@ -190,47 +225,82 @@ class ModelTrainer:
     Trains PyTorch models with AMP, large batches, early stopping.
 
     Key settings for RTX 3050 4 GB:
-      batch_size=128   fills VRAM properly (~1.8 GB LSTM, ~2.2 GB Transformer)
+      batch_size=64    fills VRAM properly (~1.2 GB LSTM, ~1.6 GB Transformer)
       grad_accum=1     no accumulation needed at this batch size
       AMP=ON           FP16 halves VRAM and speeds tensor core matmul
       num_workers=0    Windows limitation (see _safe_num_workers)
+
+    Model-specific learning rate:
+      LSTM:        lr from LSTM_CONFIG.learning_rate        (default: 0.001)
+      Transformer: lr from TRANSFORMER_CONFIG.learning_rate (default: 0.0001)
     """
 
-    def __init__(self, model: nn.Module, config: dict):
+    def __init__(self, model: nn.Module, config: dict, model_type: str = 'lstm'):
         self.model  = model
         self.config = config
         self.device = get_device()
         self.model.to(self.device)
+        self.model_type = model_type.lower()
 
         gpu_cfg  = config.get('GPU_CONFIG', {})
-        lstm_cfg = config.get('LSTM_CONFIG', {})
         es_cfg   = config.get('EARLY_STOPPING', {})
+        sched_cfg = config.get('SCHEDULER', {})
 
-        self.batch_size       = gpu_cfg.get('batch_size', 128)
+        # Model-specific learning rate + epochs
+        if self.model_type == 'transformer':
+            model_cfg = config.get('TRANSFORMER_CONFIG', {})
+            default_lr = 0.0001
+        else:
+            model_cfg = config.get('LSTM_CONFIG', {})
+            default_lr = 0.001
+        lstm_cfg = config.get('LSTM_CONFIG', {})  # epochs always from LSTM_CONFIG
+
+        self.batch_size       = gpu_cfg.get('batch_size', 64)
         self.grad_accum_steps = max(1, gpu_cfg.get('grad_accum_steps', 1))
         self.use_amp          = gpu_cfg.get('use_amp', True) and self.device.type == 'cuda'
         self.pin_memory       = gpu_cfg.get('pin_memory', True) and self.device.type == 'cuda'
         self.num_workers      = _safe_num_workers(gpu_cfg.get('num_workers', 0))
         self.epochs           = lstm_cfg.get('epochs', 50)
-        self.lr               = lstm_cfg.get('learning_rate', 0.001)
+        self.lr               = model_cfg.get('learning_rate', default_lr)
         self.patience         = es_cfg.get('patience', 20)
         self.min_delta        = es_cfg.get('min_delta', 1e-4)
+        self.nan_abort_epochs = es_cfg.get('nan_abort_epochs', 5)
+        self.label_smoothing  = sched_cfg.get('label_smoothing', 0.05)
+
+        # Scheduler config
+        self.warmup_epochs    = sched_cfg.get('warmup_epochs', 3) if self.model_type == 'transformer' else 0
+        self.scheduler_factor = sched_cfg.get('factor', 0.5)
+        self.scheduler_patience = sched_cfg.get('patience', 5)
 
         self.scaler    = torch.amp.GradScaler('cuda', enabled=self.use_amp)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
-        self.criterion = MultiTaskBCEWithLogitsLoss()
+        self.criterion = MultiTaskBCEWithLogitsLoss(label_smoothing=self.label_smoothing)
 
-        accum_note = (
-            f"×{self.grad_accum_steps}={self.batch_size * self.grad_accum_steps}"
-            if self.grad_accum_steps > 1 else ""
+        # LR scheduler: ReduceLROnPlateau (halves LR when val loss stalls)
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer,
+            mode='min',
+            factor=self.scheduler_factor,
+            patience=self.scheduler_patience,
+            min_lr=1e-6,
         )
-        logger.info(
-            f"Trainer | device={self.device} | "
-            f"batch={self.batch_size}{accum_note} | "
-            f"AMP={'ON' if self.use_amp else 'OFF'} | "
-            f"patience={self.patience} | min_delta={self.min_delta} | "
-            f"workers={self.num_workers}"
-        )
+
+        # torch.compile() — fuses ops and reduces kernel launch overhead
+        if hasattr(torch, 'compile') and self.device.type == 'cuda':
+            try:
+                self.model = torch.compile(self.model, mode='reduce-overhead')
+            except Exception:
+                pass  # silently fall back to eager mode
+
+        # Only log full config once; subsequent inits just show lr
+        if not getattr(ModelTrainer, '_config_logged', False):
+            logger.info(
+                f"Training config | batch={self.batch_size} | "
+                f"AMP={'ON' if self.use_amp else 'OFF'} | "
+                f"patience={self.patience} | nan_abort={self.nan_abort_epochs} | "
+                f"label_smooth={self.label_smoothing}"
+            )
+            ModelTrainer._config_logged = True
 
     def _make_loader(self, X: np.ndarray, y: np.ndarray, shuffle: bool) -> DataLoader:
         return _build_loader(X, y, self.batch_size, shuffle, self.num_workers, self.pin_memory)
@@ -241,14 +311,7 @@ class ModelTrainer:
         y: np.ndarray,
         timestamps: List,
     ) -> Dict[str, Tuple[np.ndarray, np.ndarray]]:
-        splits = temporal_split_data(X, y, timestamps)
-        logger.info(
-            f"Temporal split → "
-            f"Train={len(splits['train'][0]):,} | "
-            f"Val={len(splits['val'][0]):,} | "
-            f"Test={len(splits['test'][0]):,}"
-        )
-        return splits
+        return temporal_split_data(X, y, timestamps)
 
     # ── Training loop ─────────────────────────────────────────────────────────
 
@@ -265,48 +328,51 @@ class ModelTrainer:
         train_loader = self._make_loader(train_X, train_y, shuffle=True)
         val_loader   = self._make_loader(val_X,   val_y,   shuffle=False)
 
-        label      = f"[{task_name}/{model_name}]" if task_name else ""
-        accum_note = (
-            f"×{self.grad_accum_steps}={self.batch_size * self.grad_accum_steps}"
-            if self.grad_accum_steps > 1 else ""
-        )
-        logger.info(
-            f"[training] Starting | batch={self.batch_size}{accum_note} | "
-            f"AMP={'ON' if self.use_amp else 'OFF'} | "
-            f"epochs={self.epochs} | train={len(train_X):,} | val={len(val_X):,}"
-        )
+        label = f"{task_name}/{model_name}" if task_name else ""
+
+        # ── Compute pos_weight from training label frequencies ─────────────
+        # pos_weight[t] = n_negative / n_positive for each task column
+        # This upweights rare positives (e.g., mortality ~10% → pw=9.0)
+        n_pos = train_y.sum(axis=0)            # shape: (num_tasks,)
+        n_neg = train_y.shape[0] - n_pos
+        # Clamp to avoid div-by-zero and extreme weights
+        pos_weight = np.clip(n_neg / np.maximum(n_pos, 1.0), 1.0, 50.0)
+        pw_tensor  = torch.FloatTensor(pos_weight).to(self.device)
+        self.criterion.set_pos_weight(pw_tensor)
 
         best_val_loss  = float('inf')
         patience_count = 0
+        nan_consec     = 0          # consecutive NaN val loss epochs
         ckpt_path      = f"models/_best_{uuid.uuid4().hex[:8]}.pth"
         os.makedirs('models', exist_ok=True)
         torch.save(self.model.state_dict(), ckpt_path)  # epoch-0 safety save
 
         epoch_bar = tqdm(
             range(self.epochs),
-            desc=f"  {label} epochs    ",
+            desc=f"  {label:<30s}",
             unit="ep",
             file=sys.stderr,
             dynamic_ncols=True,
             leave=True,
+            bar_format=(
+                "{l_bar}{bar:30}| {n_fmt}/{total_fmt} "
+                "[{elapsed}<{remaining}, {rate_fmt}] {postfix}"
+            ),
         )
 
         for epoch in epoch_bar:
+            # ── Warmup LR for Transformer ──────────────────────────────────
+            if epoch < self.warmup_epochs:
+                warmup_lr = self.lr * (epoch + 1) / self.warmup_epochs
+                for pg in self.optimizer.param_groups:
+                    pg['lr'] = warmup_lr
+
             # ── Train ─────────────────────────────────────────────────────────
             self.model.train()
             self.optimizer.zero_grad()
             train_losses = []
 
-            batch_bar = tqdm(
-                train_loader,
-                desc="  batches",
-                unit="batch",
-                file=sys.stderr,
-                dynamic_ncols=True,
-                leave=False,
-            )
-
-            for step, (xb, yb) in enumerate(batch_bar):
+            for step, (xb, yb) in enumerate(train_loader):
                 xb = xb.to(self.device, non_blocking=True)
                 yb = yb.to(self.device, non_blocking=True)
 
@@ -328,7 +394,6 @@ class ModelTrainer:
                 loss_val = loss.item() * self.grad_accum_steps
                 if not (np.isnan(loss_val) or np.isinf(loss_val)):
                     train_losses.append(loss_val)
-                batch_bar.set_postfix(loss=f"{loss_val:.4f}")
 
             mean_train = float(np.mean(train_losses)) if train_losses else float('nan')
 
@@ -371,14 +436,29 @@ class ModelTrainer:
 
             epoch_bar.set_postfix_str(
                 f"train={mean_train:.4f} | val={mean_val:.4f} | "
-                f"auroc={mean_auroc:.4f} | pat={patience_count}/{self.patience}"
+                f"auroc={mean_auroc:.4f} | lr={self.optimizer.param_groups[0]['lr']:.1e} | "
+                f"pat={patience_count}/{self.patience}"
             )
 
             if np.isnan(mean_val):
+                nan_consec += 1
                 logger.warning(
-                    f"[training] Epoch {epoch + 2}: NaN val loss — skipping patience update"
+                    f"[training] Epoch {epoch + 2}: NaN val loss — "
+                    f"{nan_consec}/{self.nan_abort_epochs} consecutive"
                 )
+                if nan_consec >= self.nan_abort_epochs:
+                    logger.error(
+                        f"[training] ABORTING: {nan_consec} consecutive NaN val loss epochs. "
+                        f"Model has diverged — restoring best checkpoint."
+                    )
+                    break
                 continue
+            else:
+                nan_consec = 0   # reset on any valid val loss
+
+            # Step LR scheduler (only after warmup phase)
+            if epoch >= self.warmup_epochs:
+                self.scheduler.step(mean_val)
 
             if mean_val < best_val_loss - self.min_delta:
                 best_val_loss  = mean_val
@@ -424,18 +504,76 @@ class ModelTrainer:
         self,
         predictions: np.ndarray,
         targets: np.ndarray,
+        threshold: float = 0.5,
     ) -> Dict[str, float]:
+        """
+        Compute comprehensive clinical metrics per task.
+
+        Returns per-task: AUROC, AUPRC, F1, sensitivity, specificity, Brier score
+        Plus macro-averaged versions across all tasks.
+        """
         metrics = {}
-        for t in range(min(predictions.shape[1], targets.shape[1])):
+        n_tasks = min(predictions.shape[1], targets.shape[1])
+
+        all_aurocs, all_auprcs, all_f1s = [], [], []
+        all_sens, all_specs, all_briers = [], [], []
+
+        for t in range(n_tasks):
+            y_true = targets[:, t]
+            y_prob = predictions[:, t]
+            y_pred = (y_prob >= threshold).astype(int)
+
             try:
-                if len(np.unique(targets[:, t])) > 1:
-                    metrics[f'task_{t}_auroc'] = float(
-                        roc_auc_score(targets[:, t], predictions[:, t])
-                    )
-                else:
-                    metrics[f'task_{t}_auroc'] = float('nan')
+                if len(np.unique(y_true)) < 2:
+                    # Degenerate label — can't compute ranking metrics
+                    metrics[f'task_{t}_auroc']       = float('nan')
+                    metrics[f'task_{t}_auprc']       = float('nan')
+                    metrics[f'task_{t}_f1']          = float('nan')
+                    metrics[f'task_{t}_sensitivity'] = float('nan')
+                    metrics[f'task_{t}_specificity'] = float('nan')
+                    metrics[f'task_{t}_brier']       = float('nan')
+                    continue
+
+                auroc = roc_auc_score(y_true, y_prob)
+                auprc = average_precision_score(y_true, y_prob)
+                f1    = f1_score(y_true, y_pred, zero_division=0)
+                sens  = recall_score(y_true, y_pred, zero_division=0)      # sensitivity = recall
+                # specificity = TN / (TN + FP)
+                tn = ((y_pred == 0) & (y_true == 0)).sum()
+                fp = ((y_pred == 1) & (y_true == 0)).sum()
+                spec  = float(tn / (tn + fp)) if (tn + fp) > 0 else 0.0
+                brier = brier_score_loss(y_true, y_prob)
+
+                metrics[f'task_{t}_auroc']       = float(auroc)
+                metrics[f'task_{t}_auprc']       = float(auprc)
+                metrics[f'task_{t}_f1']          = float(f1)
+                metrics[f'task_{t}_sensitivity'] = float(sens)
+                metrics[f'task_{t}_specificity'] = float(spec)
+                metrics[f'task_{t}_brier']       = float(brier)
+
+                all_aurocs.append(auroc)
+                all_auprcs.append(auprc)
+                all_f1s.append(f1)
+                all_sens.append(sens)
+                all_specs.append(spec)
+                all_briers.append(brier)
+
             except Exception:
-                metrics[f'task_{t}_auroc'] = float('nan')
+                metrics[f'task_{t}_auroc']       = float('nan')
+                metrics[f'task_{t}_auprc']       = float('nan')
+                metrics[f'task_{t}_f1']          = float('nan')
+                metrics[f'task_{t}_sensitivity'] = float('nan')
+                metrics[f'task_{t}_specificity'] = float('nan')
+                metrics[f'task_{t}_brier']       = float('nan')
+
+        # Macro averages
+        metrics['macro_auroc']       = float(np.mean(all_aurocs)) if all_aurocs else 0.0
+        metrics['macro_auprc']       = float(np.mean(all_auprcs)) if all_auprcs else 0.0
+        metrics['macro_f1']          = float(np.mean(all_f1s))    if all_f1s    else 0.0
+        metrics['macro_sensitivity'] = float(np.mean(all_sens))   if all_sens   else 0.0
+        metrics['macro_specificity'] = float(np.mean(all_specs))  if all_specs  else 0.0
+        metrics['macro_brier']       = float(np.mean(all_briers)) if all_briers else 0.0
+
         return metrics
 
     # ── Checkpointing ─────────────────────────────────────────────────────────

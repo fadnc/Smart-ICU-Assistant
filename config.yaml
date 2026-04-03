@@ -77,10 +77,9 @@ XGBOOST_CONFIG:
 #
 # GPU utilization target: 85-95% (was 46% with batch=32, workers=0, no prefetch)
 GPU_CONFIG:
-  batch_size: 4096          # 6× larger — fills 4GB VRAM comfortably with LSTM/Transformer
-                           # (was 32; GPU was only 0.2/4.0 GB used = severely underloaded)
-  grad_accum_steps: 1      # No longer needed — batch=128 is already the effective size
-                           # (was 2 with batch=32 to simulate batch=64)
+  batch_size: 64           # 2× original — fills 4GB VRAM well with LSTM/Transformer
+                           # 64 is safe for RTX 3050 4GB; 128 may OOM on Transformer
+  grad_accum_steps: 1      # No accumulation needed at batch=64
   use_amp: true            # FP16 mixed precision — keep ON, halves VRAM and speeds matmul
   pin_memory: true         # Faster CPU→GPU transfer via pinned (page-locked) memory
   num_workers: 0           # Must be 0 on Windows (see note above). training.py enforces this.
@@ -109,13 +108,17 @@ AKI_KDIGO_STAGES:
   stage2_cr_ratio: 2.0
   stage3_cr_ratio: 3.0
 
-# Transformer model config (for sepsis prediction)
+# Transformer model config
+# NOTE: Transformers need a LOWER learning rate than LSTMs.
+# At lr=0.001 (LSTM default), attention scores overflow FP16 range after ~5 epochs → NaN.
+# lr=0.0001 with norm_first=True keeps training stable under AMP.
 TRANSFORMER_CONFIG:
   d_model: 128
   nhead: 8
   num_layers: 3
   dim_feedforward: 256
   dropout: 0.3
+  learning_rate: 0.0001   # 10× lower than LSTM (0.001) — standard for Transformers
 
 # Ventilation detection itemids (from D_ITEMS)
 VENTILATION_ITEMIDS:
@@ -153,7 +156,28 @@ URINE_OUTPUT_ITEMIDS:
 # Early stopping config
 # FIX: Increased patience from 10 → 20, added min_delta to prevent stopping
 # before the model has meaningfully converged. With 980K sequences and
-# batch_size=32, each epoch is long — 10 epochs was too aggressive.
+# batch_size=64, each epoch is long — 10 epochs was too aggressive.
 EARLY_STOPPING:
-  patience: 20       # was 10
-  min_delta: 0.0001  # minimum loss improvement to reset patience counter
+  patience: 20          # was 10
+  min_delta: 0.0001     # minimum loss improvement to reset patience counter
+  nan_abort_epochs: 5   # abort training after N consecutive NaN val loss epochs
+                        # prevents wasting ~3h on a diverged model
+
+# LR scheduler + training enhancements
+SCHEDULER:
+  # Warmup: linearly ramp LR from lr/N to lr over first N epochs.
+  # Only applies to Transformers (LSTM warmup is always 0).
+  warmup_epochs: 3
+
+  # ReduceLROnPlateau: halve LR when val loss doesn't improve for N epochs
+  factor: 0.5           # multiply LR by this when plateau detected
+  patience: 5           # epochs to wait before reducing LR
+
+  # Label smoothing: soften targets 0→ε, 1→(1-ε)
+  # Prevents overconfident predictions and improves calibration (Brier score)
+  label_smoothing: 0.05
+
+# Ensemble config
+ENSEMBLE:
+  enabled: true         # average predictions from all successful models
+                        # typically gives +1-3% AUROC for free

@@ -97,7 +97,16 @@ class PositionalEncoding(nn.Module):
 
 
 class TransformerModel(nn.Module):
-    """Transformer model for ICU prediction."""
+    """
+    Transformer model for ICU prediction.
+
+    FP16/AMP safety:
+      - norm_first=True (Pre-LayerNorm): normalizes inputs BEFORE attention,
+        preventing activation magnitude growth that causes FP16 overflow.
+      - forward() disables autocast for the transformer encoder, running
+        attention in FP32. Q·K^T dot products can exceed 65504 (FP16 max)
+        after a few epochs → NaN softmax → NaN loss. FP32 max is 3.4e38.
+    """
 
     def __init__(self,
                  input_size: int,
@@ -118,6 +127,7 @@ class TransformerModel(nn.Module):
             dim_feedforward=dim_feedforward,
             dropout=dropout,
             batch_first=True,
+            norm_first=True,       # Pre-LN: stabilizes training under AMP
         )
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 
@@ -128,10 +138,27 @@ class TransformerModel(nn.Module):
             nn.Linear(64, num_tasks),
         )
 
+        # Xavier/Kaiming init for stable initial activations
+        self.apply(self._init_weights)
+
+    @staticmethod
+    def _init_weights(module: nn.Module):
+        """Xavier init for linear layers, standard for Transformers."""
+        if isinstance(module, nn.Linear):
+            nn.init.xavier_uniform_(module.weight)
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.LayerNorm):
+            nn.init.ones_(module.weight)
+            nn.init.zeros_(module.bias)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.input_projection(x)
         x = self.pos_encoder(x)
-        x = self.transformer_encoder(x)
+        # Run transformer encoder in FP32 to prevent attention score overflow
+        # in FP16 (Q·K^T can exceed 65504 after a few epochs of training)
+        with torch.amp.autocast('cuda', enabled=False):
+            x = self.transformer_encoder(x.float())
         x = x.mean(dim=1)
         return self.fc(x)
 
@@ -268,22 +295,6 @@ class XGBoostPredictor:
 
     def predict(self, X: np.ndarray, threshold: float = 0.5) -> np.ndarray:
         return (self.predict_proba(X) >= threshold).astype(int)
-
-
-# ── Multi-task loss ───────────────────────────────────────────────────────────
-
-class MultiTaskLoss(nn.Module):
-    def __init__(self, task_weights: Optional[List[float]] = None):
-        super().__init__()
-        self.task_weights = task_weights
-        self.bce = nn.BCELoss(reduction='none')
-
-    def forward(self, predictions: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        task_losses = self.bce(predictions, targets).mean(dim=0)
-        if self.task_weights is not None:
-            weights = torch.tensor(self.task_weights, device=task_losses.device)
-            task_losses = task_losses * weights
-        return task_losses.mean()
 
 
 # ── Factory ───────────────────────────────────────────────────────────────────
