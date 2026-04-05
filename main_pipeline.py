@@ -20,6 +20,7 @@ import logging
 import argparse
 import json
 import pickle
+import warnings
 import numpy as np
 import pandas as pd
 from typing import Dict, List
@@ -39,10 +40,43 @@ from predictors import (
     LOSPredictor,
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-)
+# ── Suppress known harmless warnings ─────────────────────────────────────────
+# PyTorch TransformerEncoder emits this when norm_first=True (which we want)
+warnings.filterwarnings('ignore', message='.*enable_nested_tensor.*')
+# Triton-related warnings on Windows
+warnings.filterwarnings('ignore', message='.*triton.*')
+# XGBoost ctypes callback (known Windows+GPU issue, non-fatal)
+warnings.filterwarnings('ignore', category=UserWarning, module='xgboost')
+
+
+# ── Logging that works with tqdm ─────────────────────────────────────────────
+class TqdmLoggingHandler(logging.Handler):
+    """Route log messages through tqdm.write() so they don't split progress bars."""
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            tqdm.write(msg, file=sys.stderr)
+        except Exception:
+            self.handleError(record)
+
+
+def setup_logging():
+    """Configure logging once for the entire pipeline."""
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+
+    # Remove any existing handlers (prevents duplicate output)
+    root.handlers.clear()
+
+    handler = TqdmLoggingHandler()
+    handler.setFormatter(logging.Formatter(
+        '%(levelname)s:%(name)s:%(message)s'
+    ))
+    root.addHandler(handler)
+
+
+setup_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -135,7 +169,7 @@ class SmartICUPipeline:
         stay_bar = tqdm(
             stays.iterrows(),
             total=n_stays,
-            desc="  Feature extraction                ",
+            desc="  Feature extraction",
             unit="stay",
             file=sys.stderr,
             dynamic_ncols=True,
@@ -499,7 +533,7 @@ class SmartICUPipeline:
         ]
         pipe_bar = tqdm(
             PIPELINE_STEPS,
-            desc="  Pipeline steps                    ",
+            desc="  Pipeline",
             unit="step",
             file=sys.stderr,
             dynamic_ncols=True,
@@ -564,18 +598,32 @@ class SmartICUPipeline:
         for name, result in results.items():
             if isinstance(result, dict) and 'best_model' in result:
                 best = result.get('best_model', 'N/A')
-                for mname, mmetrics in result.get('comparison', {}).items():
-                    if isinstance(mmetrics, dict) and 'mean_test_auroc' in mmetrics:
-                        pm = mmetrics.get('per_task_metrics', {})
-                        auroc = mmetrics.get('mean_test_auroc', 0)
-                        auprc = pm.get('macro_auprc', 0)
-                        f1    = pm.get('macro_f1', 0)
-                        sens  = pm.get('macro_sensitivity', 0)
-                        star  = " ★" if mname == best else "  "
-                        logger.info(
-                            f"  {name:<15s}{star}{mname:<12s} "
-                            f"{auroc:>7.4f} {auprc:>7.4f} {f1:>7.4f} {sens:>7.4f}"
-                        )
+                
+                # Standard tasks (with comparison block)
+                if 'comparison' in result:
+                    for mname, mmetrics in result.get('comparison', {}).items():
+                        if isinstance(mmetrics, dict) and 'mean_test_auroc' in mmetrics:
+                            pm = mmetrics.get('per_task_metrics', {})
+                            auroc = mmetrics.get('mean_test_auroc', 0)
+                            auprc = pm.get('macro_auprc', 0)
+                            f1    = pm.get('macro_f1', 0)
+                            sens  = pm.get('macro_sensitivity', 0)
+                            star  = " ★" if mname == best else "  "
+                            logger.info(
+                                f"  {name:<15s}{star}{mname:<12s} "
+                                f"{auroc:>7.4f} {auprc:>7.4f} {f1:>7.4f} {sens:>7.4f}"
+                            )
+                
+                # Readmission task (flat metrics)
+                elif 'auroc' in result:
+                    auroc = result.get('auroc', 0)
+                    auprc = result.get('auprc', 0)
+                    f1    = result.get('f1', 0)
+                    sens  = result.get('sensitivity', 0)
+                    logger.info(
+                        f"  {name:<15s} ★{best:<12s} "
+                        f"{auroc:>7.4f} {auprc:>7.4f} {f1:>7.4f} {sens:>7.4f}"
+                    )
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────

@@ -19,7 +19,6 @@ import yaml
 import logging
 from tqdm import tqdm
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -70,12 +69,12 @@ class MIMICDataLoader:
         """Create a consistent tqdm bar writing to stderr."""
         return tqdm(
             total=total,
-            desc=f"  {desc:<30}",
+            desc=f"  {desc}",
             unit=unit,
             unit_scale=True,
             file=sys.stderr,
             dynamic_ncols=True,
-            leave=True,
+            leave=False,
             bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
         )
 
@@ -164,13 +163,13 @@ class MIMICDataLoader:
 
             bar = tqdm(
                 total=file_bytes,
-                desc="  Loading CHARTEVENTS (chunked)     ",
+                desc="  CHARTEVENTS (chunked)",
                 unit="B",
                 unit_scale=True,
                 unit_divisor=1024,
                 file=sys.stderr,
                 dynamic_ncols=True,
-                leave=True,
+                leave=False,
                 bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}] kept={postfix}",
             )
 
@@ -245,13 +244,13 @@ class MIMICDataLoader:
 
         bar = tqdm(
             total=file_bytes,
-            desc="  Loading LABEVENTS (chunked)        ",
+            desc="  LABEVENTS (chunked)",
             unit="B",
             unit_scale=True,
             unit_divisor=1024,
             file=sys.stderr,
             dynamic_ncols=True,
-            leave=True,
+            leave=False,
             bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
         )
 
@@ -475,7 +474,7 @@ class MIMICDataLoader:
 
         step_bar = tqdm(
             ALL_STEPS,
-            desc="  Data loading pipeline             ",
+            desc="  Data loading",
             unit="step",
             file=sys.stderr,
             dynamic_ncols=True,

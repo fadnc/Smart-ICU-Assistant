@@ -46,9 +46,11 @@ class ReadmissionPredictor:
         with open(config_path, 'r') as f:
             self.config = yaml.safe_load(f)
         xgb_cfg = self.config.get('XGBOOST_CONFIG', {})
+
+        # Use device string directly from config (XGBoost 2.x API)
         import torch as _torch
         use_gpu = _torch.cuda.is_available()
-        device  = f'cuda:{xgb_cfg.get("gpu_id", 0)}' if use_gpu else 'cpu'
+        device  = xgb_cfg.get('device', 'cuda' if use_gpu else 'cpu')
 
         self.model = xgb.XGBClassifier(
             max_depth=xgb_cfg.get('max_depth', 6),

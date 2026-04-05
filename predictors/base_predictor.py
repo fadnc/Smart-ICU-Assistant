@@ -334,8 +334,7 @@ class BasePredictor(ABC):
             learning_rate = xgb_config.get('learning_rate', 0.1),
             n_estimators  = xgb_config.get('n_estimators', 100),
             subsample     = xgb_config.get('subsample', 0.8),
-            tree_method   = 'hist',
-            gpu_id        = xgb_config.get('gpu_id', 0),
+            device        = xgb_config.get('device', 'cpu'),
         )
 
         splits           = temporal_split_data(X, y, timestamps)
@@ -345,7 +344,7 @@ class BasePredictor(ABC):
 
         with tqdm(
             total=y.shape[1],
-            desc=f"  [{self.TASK_NAME}] XGBoost trees   ",
+            desc=f"  [{self.TASK_NAME}] XGBoost",
             unit="task",
             file=sys.stderr,
             dynamic_ncols=True,

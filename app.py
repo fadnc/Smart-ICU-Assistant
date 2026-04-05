@@ -1331,30 +1331,110 @@ async def alerts():
 import threading
 from contextlib import asynccontextmanager
 
-_boot_status = {"stage": "starting", "ready": False}
+_BOOT_STAGES = {
+    "starting": {
+        "index": 0,
+        "progress": 0.05,
+        "label": "Initializing service",
+        "detail": "Preparing API routes and dashboard assets",
+    },
+    "loading_patients": {
+        "index": 1,
+        "progress": 0.20,
+        "label": "Loading patient demographics",
+        "detail": "Reading patients, admissions, and ICU stays",
+    },
+    "patients_loaded": {
+        "index": 2,
+        "progress": 0.38,
+        "label": "Patients ready",
+        "detail": "Core roster is available for browsing",
+    },
+    "loading_models": {
+        "index": 3,
+        "progress": 0.52,
+        "label": "Loading trained models",
+        "detail": "Preparing model registry and prediction metadata",
+    },
+    "models_loaded": {
+        "index": 4,
+        "progress": 0.66,
+        "label": "Models ready",
+        "detail": "Predictions can run while full live data warms up",
+    },
+    "loading_chartevents": {
+        "index": 5,
+        "progress": 0.80,
+        "label": "Loading CHARTEVENTS",
+        "detail": "Grouping vital-sign history for bedside trends",
+    },
+    "loading_labevents": {
+        "index": 6,
+        "progress": 0.92,
+        "label": "Loading LABEVENTS",
+        "detail": "Attaching lab history to ICU stays",
+    },
+    "ready": {
+        "index": 7,
+        "progress": 1.00,
+        "label": "Realtime data ready",
+        "detail": "Vitals and labs now come from full MIMIC-III data",
+    },
+}
+_BOOT_TOTAL_STAGES = len(_BOOT_STAGES)
+_boot_status = {
+    "stage": "starting",
+    "label": _BOOT_STAGES["starting"]["label"],
+    "detail": _BOOT_STAGES["starting"]["detail"],
+    "progress": _BOOT_STAGES["starting"]["progress"],
+    "current_step": 1,
+    "total_steps": _BOOT_TOTAL_STAGES,
+    "ready": False,
+    "error": None,
+    "updated_at": datetime.utcnow().isoformat(),
+}
+
+
+def _set_boot_status(stage: str, *, ready: Optional[bool] = None, error: Optional[str] = None):
+    meta = _BOOT_STAGES.get(stage, {})
+    _boot_status.update({
+        "stage": stage,
+        "label": meta.get("label", stage.replace("_", " ").title()),
+        "detail": meta.get("detail", _boot_status.get("detail", "")),
+        "progress": meta.get("progress", _boot_status.get("progress", 0.0)),
+        "current_step": min(meta.get("index", _BOOT_TOTAL_STAGES - 1) + 1, _BOOT_TOTAL_STAGES),
+        "total_steps": _BOOT_TOTAL_STAGES,
+        "ready": ready if ready is not None else stage == "ready",
+        "error": error,
+        "updated_at": datetime.utcnow().isoformat(),
+    })
 
 def _background_loader():
     """Load heavy CHARTEVENTS + LABEVENTS in background thread."""
     try:
-        _boot_status["stage"] = "loading CHARTEVENTS"
+        _set_boot_status("loading_chartevents")
         print("[BOOT-BG] Loading CHARTEVENTS (may take 30+ min for large files)…")
         cached("charts_grouped", _build_charts_grouped)
 
-        _boot_status["stage"] = "loading LABEVENTS"
+        _set_boot_status("loading_labevents")
         print("[BOOT-BG] Loading LABEVENTS…")
         cached("labs_grouped", _build_labs_grouped)
 
-        _boot_status["stage"] = "ready"
-        _boot_status["ready"] = True
+        _set_boot_status("ready", ready=True)
         print("[BOOT-BG] ✓ All data loaded. Vitals/labs now use real MIMIC-III data.")
     except Exception as exc:
-        _boot_status["stage"] = f"error: {exc}"
+        _set_boot_status("ready", ready=False, error=str(exc))
+        _boot_status["label"] = "Background loading failed"
+        _boot_status["detail"] = (
+            "Dashboard remains usable, but vitals and labs may stay on fallback data"
+        )
         print(f"[BOOT-BG] Background loading failed: {exc}")
 
 
 @asynccontextmanager
 async def lifespan(app):
     """FastAPI lifespan: load essentials sync, heavy data in background."""
+    _set_boot_status("starting", ready=False, error=None)
     print("=" * 60)
     print("  Smart ICU Assistant — FastAPI")
     print(f"  Data      : {DATA_DIR}")
@@ -1366,13 +1446,15 @@ async def lifespan(app):
     print("=" * 60)
 
     # Fast loads — patients + models (<10 sec)
+    _set_boot_status("loading_patients")
     print("[BOOT] Loading patient demographics…")
     cached("patients", _load_patients)
-    _boot_status["stage"] = "patients loaded"
+    _set_boot_status("patients_loaded")
 
+    _set_boot_status("loading_models")
     print("[BOOT] Loading trained models…")
     _load_all_models()
-    _boot_status["stage"] = "models loaded"
+    _set_boot_status("models_loaded")
 
     # Heavy loads in background thread (CHARTEVENTS = 33 GB)
     print("[BOOT] Server starting — heavy data loading in background thread…")
@@ -1389,7 +1471,7 @@ app.router.lifespan_context = lifespan
 
 @app.get("/api/boot_status", include_in_schema=False)
 async def boot_status():
-    return _boot_status
+    return dict(_boot_status)
 
 
 # ═════════════════════════════════════════════════════════════════════════════

@@ -18,7 +18,6 @@ import xgboost as xgb
 import yaml
 import logging
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -241,16 +240,12 @@ class XGBoostPredictor:
                  n_estimators: int = 100,
                  subsample: float = 0.8,
                  tree_method: str = 'hist',
-                 gpu_id: int = 0):
+                 device: str = 'cpu'):
         self.num_tasks = num_tasks
         self.models    = []
 
-        import torch as _torch
-        use_gpu = _torch.cuda.is_available()
-        device  = f'cuda:{gpu_id}' if use_gpu else 'cpu'
-
         logger.info(
-            f"XGBoost: {'GPU' if use_gpu else 'CPU'} "
+            f"XGBoost: {'GPU' if 'cuda' in device else 'CPU'} "
             f"(device={device}, tree_method=hist)"
         )
 
@@ -361,8 +356,7 @@ def create_model(model_type: str, config: dict):
             learning_rate=cfg.get('learning_rate', 0.1),
             n_estimators=cfg.get('n_estimators', 100),
             subsample=cfg.get('subsample', 0.8),
-            tree_method='hist',
-            gpu_id=cfg.get('gpu_id', 0),
+            device=cfg.get('device', 'cpu'),
         )
 
     raise ValueError(

@@ -91,9 +91,10 @@
         .header {
             display: flex;
             align-items: center;
+            flex-wrap: wrap;
             gap: 16px;
-            padding: 0 20px;
-            height: 52px;
+            padding: 10px 20px;
+            min-height: 52px;
             background: linear-gradient(90deg, var(--bg2) 0%, #0c1520 50%, var(--bg2) 100%);
             border-bottom: 1px solid var(--border);
             flex-shrink: 0;
@@ -1059,6 +1060,146 @@
             margin-right: 10px;
         }
 
+        .boot-shell {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            background:
+                radial-gradient(circle at top, rgba(0, 212, 255, .12), transparent 40%),
+                linear-gradient(180deg, rgba(6, 15, 22, .96), rgba(8, 22, 31, .98));
+            z-index: 10000;
+            transition: opacity .35s ease, visibility .35s ease;
+        }
+
+        .boot-shell.hidden {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        .boot-card {
+            width: min(520px, 100%);
+            padding: 24px;
+            border: 1px solid rgba(0, 212, 255, .18);
+            border-radius: 12px;
+            background: rgba(7, 19, 28, .92);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, .35);
+        }
+
+        .boot-kicker {
+            font-family: var(--mono);
+            font-size: 11px;
+            letter-spacing: 2px;
+            color: var(--accent2);
+            margin-bottom: 10px;
+        }
+
+        .boot-title {
+            font-size: 22px;
+            margin-bottom: 8px;
+        }
+
+        .boot-stage {
+            font-family: var(--mono);
+            font-size: 13px;
+            color: var(--text1);
+            margin-bottom: 6px;
+        }
+
+        .boot-detail {
+            font-size: 12px;
+            color: var(--text3);
+            line-height: 1.6;
+            margin-bottom: 14px;
+        }
+
+        .boot-progress {
+            height: 10px;
+            border-radius: 999px;
+            overflow: hidden;
+            background: rgba(255, 255, 255, .06);
+            border: 1px solid rgba(255, 255, 255, .06);
+        }
+
+        .boot-progress-fill {
+            height: 100%;
+            width: 8%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, var(--accent2), var(--accent), #7af7ff);
+            box-shadow: 0 0 18px rgba(0, 212, 255, .35);
+            transition: width .45s ease;
+        }
+
+        .boot-meta {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            margin-top: 10px;
+            font-family: var(--mono);
+            font-size: 11px;
+            color: var(--text3);
+        }
+
+        .boot-error {
+            display: none;
+            margin-top: 12px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 107, 107, .28);
+            background: rgba(255, 107, 107, .08);
+            color: #ffb1b1;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .boot-inline {
+            min-width: 220px;
+            max-width: 320px;
+            flex: 1 1 240px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, .08);
+            background: rgba(255, 255, 255, .03);
+        }
+
+        .boot-inline.error {
+            border-color: rgba(255, 107, 107, .25);
+            background: rgba(255, 107, 107, .08);
+        }
+
+        .boot-inline-top {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 6px;
+            font-family: var(--mono);
+            font-size: 10px;
+            color: var(--text2);
+        }
+
+        .boot-inline-detail {
+            font-size: 10px;
+            color: var(--text3);
+            margin-bottom: 8px;
+            line-height: 1.4;
+        }
+
+        .boot-inline-bar {
+            height: 6px;
+            overflow: hidden;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, .06);
+        }
+
+        .boot-inline-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent2), var(--accent));
+            transition: width .45s ease;
+        }
+
         /* Unit pill */
         .unit-pill {
             padding: 2px 8px;
@@ -1184,46 +1325,113 @@
 </head>
 
 <body class="scan-effect">
-    <div id="root">
-        <!-- Loading screen shown while Babel transpiles JSX -->
-        <div id="boot-loader"
-            style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:16px;">
-            <div
-                style="width:40px;height:40px;border:3px solid var(--border);border-top:3px solid var(--cyan);border-radius:50%;animation:spin 1s linear infinite;">
+    <div id="boot-loader" class="boot-shell">
+        <div class="boot-card">
+            <div class="boot-kicker">SMART ICU / SYSTEM BOOT</div>
+            <div class="boot-title">Loading Smart ICU Dashboard…</div>
+            <div id="boot-stage" class="boot-stage">Connecting to backend</div>
+            <div id="boot-detail" class="boot-detail">Waiting for startup telemetry from the FastAPI service.</div>
+            <div class="boot-progress">
+                <div id="boot-progress-fill" class="boot-progress-fill"></div>
             </div>
-            <div style="color:var(--text2);font-family:var(--sans);font-size:14px;">Loading Smart ICU Dashboard…</div>
-            <div id="boot-error"
-                style="color:var(--red);font-size:12px;display:none;max-width:400px;text-align:center;"></div>
+            <div class="boot-meta">
+                <span id="boot-step">Step 1 / 8</span>
+                <span id="boot-percent">8%</span>
+            </div>
+            <div id="boot-error" class="boot-error"></div>
         </div>
-        <style>
-            @keyframes spin {
-                0% {
-                    transform: rotate(0deg)
-                }
-
-                100% {
-                    transform: rotate(360deg)
-                }
-            }
-        </style>
     </div>
+    <div id="root"></div>
 
     <script>
-        // CDN load failure detector
-        window.__cdnOk = { react: false, babel: false, recharts: false };
-        window.addEventListener('DOMContentLoaded', function () {
-            setTimeout(function () {
+        window.__bootState = {
+            stage: "connecting",
+            label: "Connecting to backend",
+            detail: "Waiting for startup telemetry from the FastAPI service.",
+            progress: 0.08,
+            current_step: 1,
+            total_steps: 8,
+            ready: false,
+            error: null
+        };
+        window.__bootListeners = [];
+
+        function renderBootLoader(state) {
+            var fill = document.getElementById("boot-progress-fill");
+            var stage = document.getElementById("boot-stage");
+            var detail = document.getElementById("boot-detail");
+            var step = document.getElementById("boot-step");
+            var percent = document.getElementById("boot-percent");
+            var error = document.getElementById("boot-error");
+            if (fill) fill.style.width = Math.max(6, Math.round((state.progress || 0) * 100)) + "%";
+            if (stage) stage.textContent = state.label || "Loading Smart ICU Dashboard…";
+            if (detail) detail.textContent = state.detail || "";
+            if (step) step.textContent = `Step ${state.current_step || 1} / ${state.total_steps || 8}`;
+            if (percent) percent.textContent = `${Math.round((state.progress || 0) * 100)}%`;
+            if (error) {
+                error.style.display = state.error ? "block" : "none";
+                error.textContent = state.error || "";
+            }
+        }
+
+        window.__setBootState = function (nextState) {
+            window.__bootState = Object.assign({}, window.__bootState, nextState || {});
+            renderBootLoader(window.__bootState);
+            window.__bootListeners.forEach(function (listener) { listener(window.__bootState); });
+        };
+
+        window.__subscribeBootState = function (listener) {
+            window.__bootListeners.push(listener);
+            listener(window.__bootState);
+            return function () {
+                window.__bootListeners = window.__bootListeners.filter(function (entry) { return entry !== listener; });
+            };
+        };
+
+        window.__markDashboardMounted = function () {
+            var loader = document.getElementById("boot-loader");
+            if (!loader) return;
+            window.setTimeout(function () {
+                loader.classList.add("hidden");
+            }, 250);
+        };
+
+        function pollBootStatus() {
+            fetch("/api/boot_status", { cache: "no-store" })
+                .then(function (response) {
+                    if (!response.ok) throw new Error("Boot status unavailable");
+                    return response.json();
+                })
+                .then(function (status) {
+                    window.__setBootState(status);
+                })
+                .catch(function (error) {
+                    window.__setBootState({
+                        label: "Backend not ready yet",
+                        detail: "Waiting for the API process to finish starting up.",
+                        error: error.message,
+                        progress: Math.max(window.__bootState.progress || 0, 0.08)
+                    });
+                });
+        }
+
+        window.addEventListener("DOMContentLoaded", function () {
+            renderBootLoader(window.__bootState);
+            pollBootStatus();
+            window.setInterval(pollBootStatus, 2500);
+
+            window.setTimeout(function () {
                 var missing = [];
-                if (typeof React === 'undefined') missing.push('React');
-                if (typeof ReactDOM === 'undefined') missing.push('ReactDOM');
-                if (typeof Babel === 'undefined') missing.push('Babel');
-                if (typeof Recharts === 'undefined') missing.push('Recharts');
+                if (typeof React === "undefined") missing.push("React");
+                if (typeof ReactDOM === "undefined") missing.push("ReactDOM");
+                if (typeof Babel === "undefined") missing.push("Babel");
+                if (typeof Recharts === "undefined") missing.push("Recharts");
                 if (missing.length > 0) {
-                    var el = document.getElementById('boot-error');
-                    if (el) {
-                        el.style.display = 'block';
-                        el.textContent = 'Failed to load: ' + missing.join(', ') + '. Check your internet connection and try refreshing.';
-                    }
+                    window.__setBootState({
+                        label: "Dashboard assets failed to load",
+                        detail: "Some required frontend libraries did not initialize correctly.",
+                        error: "Missing dependencies: " + missing.join(", ")
+                    });
                 }
             }, 5000);
         });
@@ -1257,6 +1465,15 @@
         function fmtTime(iso) {
             const d = new Date(iso);
             return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+        }
+
+        function useBootStatus() {
+            const [status, setStatus] = useState(window.__bootState || {});
+            useEffect(() => {
+                if (!window.__subscribeBootState) return undefined;
+                return window.__subscribeBootState(setStatus);
+            }, []);
+            return status;
         }
 
         function useFetch(url, deps = []) {
@@ -1965,6 +2182,11 @@
         function App() {
             const [tab, setTab] = useState("overview");
             const [selectedPatient, setSelectedPatient] = useState(null);
+            const bootStatus = useBootStatus();
+
+            useEffect(() => {
+                if (window.__markDashboardMounted) window.__markDashboardMounted();
+            }, []);
 
             const handleSelectPatient = (p) => {
                 setSelectedPatient(p);
@@ -1986,6 +2208,20 @@
                         <span style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--text3)", letterSpacing: 1 }}>
                             MIMIC-III · DECISION SUPPORT SYSTEM
                         </span>
+                        {(!bootStatus.ready || bootStatus.error) && (
+                            <div className={`boot-inline ${bootStatus.error ? "error" : ""}`}>
+                                <div className="boot-inline-top">
+                                    <span>{bootStatus.label || "System warm-up"}</span>
+                                    <span>{Math.round((bootStatus.progress || 0) * 100)}%</span>
+                                </div>
+                                <div className="boot-inline-detail">
+                                    {bootStatus.error || bootStatus.detail || "Preparing realtime data feeds."}
+                                </div>
+                                <div className="boot-inline-bar">
+                                    <div className="boot-inline-fill" style={{ width: `${Math.max(6, Math.round((bootStatus.progress || 0) * 100))}%` }} />
+                                </div>
+                            </div>
+                        )}
                         <Clock />
                     </div>
 

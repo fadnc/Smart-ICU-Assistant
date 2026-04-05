@@ -18,7 +18,6 @@ import yaml
 import logging
 from sklearn.preprocessing import StandardScaler
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

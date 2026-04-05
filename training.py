@@ -38,6 +38,7 @@ import sys
 import uuid
 import platform
 import logging
+import warnings
 import numpy as np
 import torch
 import torch.nn as nn
@@ -49,7 +50,17 @@ from sklearn.metrics import (
 from typing import Dict, List, Tuple, Optional
 from tqdm import tqdm
 
-logging.basicConfig(level=logging.INFO)
+# Suppress torch.compile / inductor errors — fall back to eager mode silently.
+# On Windows, Triton is unsupported and inductor crashes with:
+#   ImportError: cannot import name 'triton_key' from 'triton.compiler.compiler'
+# This MUST be set BEFORE any model forward() call.
+import torch._dynamo
+torch._dynamo.config.suppress_errors = True
+
+# Suppress known harmless warnings
+warnings.filterwarnings('ignore', message='.*enable_nested_tensor.*')
+warnings.filterwarnings('ignore', message='.*Torch was not compiled with flash attention.*')
+
 logger = logging.getLogger(__name__)
 
 
@@ -285,8 +296,12 @@ class ModelTrainer:
             min_lr=1e-6,
         )
 
-        # torch.compile() — fuses ops and reduces kernel launch overhead
-        if hasattr(torch, 'compile') and self.device.type == 'cuda':
+        # torch.compile() — fuses ops and reduces kernel launch overhead.
+        # suppress_errors=True is set at module level, so any inductor/Triton
+        # crash falls back to eager mode automatically on all platforms.
+        if (hasattr(torch, 'compile')
+                and self.device.type == 'cuda'
+                and platform.system() != 'Windows'):
             try:
                 self.model = torch.compile(self.model, mode='reduce-overhead')
             except Exception:
@@ -346,6 +361,8 @@ class ModelTrainer:
         ckpt_path      = f"models/_best_{uuid.uuid4().hex[:8]}.pth"
         os.makedirs('models', exist_ok=True)
         torch.save(self.model.state_dict(), ckpt_path)  # epoch-0 safety save
+        train_steps = len(train_loader)
+        best_auroc  = 0.0
 
         epoch_bar = tqdm(
             range(self.epochs),
@@ -371,8 +388,18 @@ class ModelTrainer:
             self.model.train()
             self.optimizer.zero_grad()
             train_losses = []
+            batch_bar = tqdm(
+                total=train_steps,
+                desc=f"    {label[:26]:<26s}",
+                unit="batch",
+                file=sys.stderr,
+                dynamic_ncols=True,
+                leave=False,
+                disable=(not verbose or train_steps <= 1),
+                bar_format="{l_bar}{bar:24}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}] {postfix}",
+            )
 
-            for step, (xb, yb) in enumerate(train_loader):
+            for step, (xb, yb) in enumerate(train_loader, start=1):
                 xb = xb.to(self.device, non_blocking=True)
                 yb = yb.to(self.device, non_blocking=True)
 
@@ -384,7 +411,8 @@ class ModelTrainer:
 
                 self.scaler.scale(loss).backward()
 
-                if (step + 1) % self.grad_accum_steps == 0:
+                should_step = (step % self.grad_accum_steps == 0) or (step == train_steps)
+                if should_step:
                     self.scaler.unscale_(self.optimizer)
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                     self.scaler.step(self.optimizer)
@@ -394,6 +422,14 @@ class ModelTrainer:
                 loss_val = loss.item() * self.grad_accum_steps
                 if not (np.isnan(loss_val) or np.isinf(loss_val)):
                     train_losses.append(loss_val)
+                if not batch_bar.disable:
+                    batch_bar.update(1)
+                    batch_bar.set_postfix_str(
+                        f"epoch={epoch + 1}/{self.epochs} | loss={loss_val:.4f} | lr={self.optimizer.param_groups[0]['lr']:.1e}"
+                    )
+
+            if not batch_bar.disable:
+                batch_bar.close()
 
             mean_train = float(np.mean(train_losses)) if train_losses else float('nan')
 
@@ -434,16 +470,19 @@ class ModelTrainer:
             except Exception:
                 mean_auroc = 0.0
 
+            best_auroc = max(best_auroc, mean_auroc)
+            best_val_display = "n/a" if np.isinf(best_val_loss) else f"{best_val_loss:.4f}"
+
             epoch_bar.set_postfix_str(
                 f"train={mean_train:.4f} | val={mean_val:.4f} | "
-                f"auroc={mean_auroc:.4f} | lr={self.optimizer.param_groups[0]['lr']:.1e} | "
-                f"pat={patience_count}/{self.patience}"
+                f"auroc={mean_auroc:.4f} | "
+                f"lr={self.optimizer.param_groups[0]['lr']:.1e} | pat={patience_count}/{self.patience}"
             )
 
             if np.isnan(mean_val):
                 nan_consec += 1
                 logger.warning(
-                    f"[training] Epoch {epoch + 2}: NaN val loss — "
+                    f"[training] Epoch {epoch + 1}: NaN val loss — "
                     f"{nan_consec}/{self.nan_abort_epochs} consecutive"
                 )
                 if nan_consec >= self.nan_abort_epochs:
