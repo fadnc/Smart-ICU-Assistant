@@ -200,7 +200,7 @@ class SmartICUPipeline:
                     continue
 
                 sequences, timestamps = self.feature_engineer.create_sequences(
-                    features, sequence_length=24, step_size=6
+                    features, sequence_length=24, step_size=12
                 )
                 if len(sequences) == 0:
                     continue

@@ -279,22 +279,32 @@ class ModelTrainer:
         self.label_smoothing  = sched_cfg.get('label_smoothing', 0.05)
 
         # Scheduler config
-        self.warmup_epochs    = sched_cfg.get('warmup_epochs', 3) if self.model_type == 'transformer' else 0
-        self.scheduler_factor = sched_cfg.get('factor', 0.5)
+        self.warmup_epochs      = sched_cfg.get('warmup_epochs', 3) if self.model_type == 'transformer' else 0
+        self.scheduler_factor   = sched_cfg.get('factor', 0.5)
         self.scheduler_patience = sched_cfg.get('patience', 5)
+        self.scheduler_type     = sched_cfg.get('type', 'plateau')  # 'plateau' or 'cosine'
 
         self.scaler    = torch.amp.GradScaler('cuda', enabled=self.use_amp)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
         self.criterion = MultiTaskBCEWithLogitsLoss(label_smoothing=self.label_smoothing)
 
-        # LR scheduler: ReduceLROnPlateau (halves LR when val loss stalls)
-        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer,
-            mode='min',
-            factor=self.scheduler_factor,
-            patience=self.scheduler_patience,
-            min_lr=1e-6,
-        )
+        # LR scheduler
+        if self.scheduler_type == 'cosine':
+            # CosineAnnealingLR: smooth LR decay over full training run
+            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                self.optimizer,
+                T_max=self.epochs - self.warmup_epochs,
+                eta_min=1e-6,
+            )
+        else:
+            # ReduceLROnPlateau: halves LR when val loss stalls
+            self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                self.optimizer,
+                mode='min',
+                factor=self.scheduler_factor,
+                patience=self.scheduler_patience,
+                min_lr=1e-6,
+            )
 
         # torch.compile() — fuses ops and reduces kernel launch overhead.
         # suppress_errors=True is set at module level, so any inductor/Triton
@@ -453,8 +463,8 @@ class ModelTrainer:
                     if not (torch.isnan(val_loss) or torch.isinf(val_loss)):
                         val_losses.append(val_loss.item())
 
-                    all_preds.append(torch.sigmoid(logits).cpu().numpy())
-                    all_targets.append(yb.cpu().numpy())
+                    all_preds.append(torch.sigmoid(logits).float().cpu().numpy())
+                    all_targets.append(yb.float().cpu().numpy())
 
             mean_val = float(np.mean(val_losses)) if val_losses else float('nan')
 
@@ -497,7 +507,10 @@ class ModelTrainer:
 
             # Step LR scheduler (only after warmup phase)
             if epoch >= self.warmup_epochs:
-                self.scheduler.step(mean_val)
+                if self.scheduler_type == 'cosine':
+                    self.scheduler.step()
+                else:
+                    self.scheduler.step(mean_val)
 
             if mean_val < best_val_loss - self.min_delta:
                 best_val_loss  = mean_val
@@ -534,7 +547,7 @@ class ModelTrainer:
                 xb = xb.to(self.device, non_blocking=True)
                 with torch.amp.autocast('cuda', enabled=self.use_amp):
                     logits = self.model(xb)
-                all_preds.append(torch.sigmoid(logits).cpu().numpy())
+                all_preds.append(torch.sigmoid(logits).float().cpu().numpy())
         return np.vstack(all_preds)
 
     # ── Metrics ───────────────────────────────────────────────────────────────
