@@ -14,6 +14,7 @@ torchvision>=0.15.0
 # Web API
 fastapi>=0.100.0
 uvicorn>=0.23.0
+jinja2>=3.1.0
 
 # Interpretability
 shap>=0.43.0
