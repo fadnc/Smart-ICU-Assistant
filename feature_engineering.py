@@ -69,6 +69,9 @@ class FeatureEngineer:
         Extract vital signs for a specific ICU stay and time window.
         Uses cached itemid mapping — O(1) per call after first invocation.
         """
+        if len(chartevents) == 0 or 'icustay_id' not in chartevents.columns:
+            return pd.DataFrame()
+
         mask = (
             (chartevents['icustay_id'] == icustay_id) &
             (chartevents['charttime'] >= start_time) &
@@ -111,6 +114,9 @@ class FeatureEngineer:
         Extract lab test results for a specific ICU stay and time window.
         Uses cached itemid mapping — O(1) per call after first invocation.
         """
+        if len(labevents) == 0 or 'icustay_id' not in labevents.columns:
+            return pd.DataFrame()
+
         mask = (
             (labevents['icustay_id'] == icustay_id) &
             (labevents['charttime'] >= start_time) &
@@ -147,6 +153,19 @@ class FeatureEngineer:
 
     def _create_vital_itemid_mapping(self, d_items: pd.DataFrame) -> Dict[str, List[int]]:
         """Build mapping of vital names to itemids using D_ITEMS dictionary."""
+        if d_items is None or len(d_items) == 0 or 'label' not in d_items.columns:
+            logger.warning("d_items is empty or missing 'label' column — using hardcoded vital itemids")
+            return {
+                'heartrate': [220045, 211],
+                'sysbp':     [220050, 220179, 51, 455],
+                'diasbp':    [220051, 220180, 8368, 8441],
+                'meanbp':    [220052, 220181, 52, 456],
+                'resprate':  [220210, 224690, 618, 615],
+                'tempc':     [223761, 223762, 676, 678],
+                'spo2':      [220277, 646],
+                'glucose':   [220621, 226537, 807, 811, 1529],
+            }
+
         vital_keywords = {
             'heartrate': ['heart rate', 'hr'],
             'sysbp': ['systolic', 'nbp systolic', 'arterial bp systolic'],
@@ -169,6 +188,10 @@ class FeatureEngineer:
 
     def _create_lab_itemid_mapping(self, d_labitems: pd.DataFrame) -> Dict[str, List[int]]:
         """Build mapping of lab names to itemids using D_LABITEMS dictionary."""
+        if d_labitems is None or len(d_labitems) == 0 or 'label' not in d_labitems.columns:
+            logger.warning("d_labitems is empty or missing 'label' column — returning empty lab mapping")
+            return {}
+
         mapping = {}
         for lab_name in self.lab_features:
             mask = d_labitems['label'].str.lower().str.contains(lab_name, na=False, case=False)
