@@ -41,15 +41,56 @@ from predictors import (
 )
 
 # ── Suppress known harmless warnings ─────────────────────────────────────────
-# PyTorch TransformerEncoder emits this when norm_first=True (which we want)
 warnings.filterwarnings('ignore', message='.*enable_nested_tensor.*')
-# Triton-related warnings on Windows
 warnings.filterwarnings('ignore', message='.*triton.*')
-# XGBoost ctypes callback (known Windows+GPU issue, non-fatal)
 warnings.filterwarnings('ignore', category=UserWarning, module='xgboost')
 
 
+# ── ANSI Colors ──────────────────────────────────────────────────────────────
+
+class C:
+    """ANSI color codes for terminal output."""
+    RESET      = '\033[0m'
+    BOLD       = '\033[1m'
+    DIM        = '\033[2m'
+    # Foreground
+    RED        = '\033[91m'
+    GREEN      = '\033[92m'
+    YELLOW     = '\033[93m'
+    BLUE       = '\033[94m'
+    MAGENTA    = '\033[95m'
+    CYAN       = '\033[96m'
+    WHITE      = '\033[97m'
+    # Backgrounds
+    BG_GREEN   = '\033[42m'
+    BG_RED     = '\033[41m'
+    BG_BLUE    = '\033[44m'
+    BG_MAGENTA = '\033[45m'
+    BG_CYAN    = '\033[46m'
+
+
+def _color_auroc(val: float) -> str:
+    """Color-code AUROC value: green ≥ 0.80, yellow ≥ 0.70, red < 0.70."""
+    if val >= 0.80:
+        return f"{C.GREEN}{C.BOLD}{val:>7.4f}{C.RESET}"
+    elif val >= 0.70:
+        return f"{C.YELLOW}{val:>7.4f}{C.RESET}"
+    else:
+        return f"{C.RED}{val:>7.4f}{C.RESET}"
+
+
+def _color_metric(val: float) -> str:
+    """Color-code a metric value (F1, sensitivity, etc.)."""
+    if val >= 0.50:
+        return f"{C.GREEN}{val:>7.4f}{C.RESET}"
+    elif val >= 0.20:
+        return f"{C.YELLOW}{val:>7.4f}{C.RESET}"
+    else:
+        return f"{C.RED}{val:>7.4f}{C.RESET}"
+
+
 # ── Logging that works with tqdm ─────────────────────────────────────────────
+
 class TqdmLoggingHandler(logging.Handler):
     """Route log messages through tqdm.write() so they don't split progress bars."""
 
@@ -61,18 +102,33 @@ class TqdmLoggingHandler(logging.Handler):
             self.handleError(record)
 
 
+class ColorFormatter(logging.Formatter):
+    """Colorful log formatter — level name is colored, message stays readable."""
+
+    LEVEL_COLORS = {
+        logging.DEBUG:    C.DIM,
+        logging.INFO:     C.CYAN,
+        logging.WARNING:  C.YELLOW,
+        logging.ERROR:    C.RED,
+        logging.CRITICAL: C.RED + C.BOLD,
+    }
+
+    def format(self, record):
+        color = self.LEVEL_COLORS.get(record.levelno, C.RESET)
+        # Only color the level tag, keep the message readable
+        level = f"{color}{record.levelname:<7}{C.RESET}"
+        name  = f"{C.DIM}{record.name}{C.RESET}"
+        return f"{level} {name}: {record.getMessage()}"
+
+
 def setup_logging():
-    """Configure logging once for the entire pipeline."""
+    """Configure colorful logging for the entire pipeline."""
     root = logging.getLogger()
     root.setLevel(logging.INFO)
-
-    # Remove any existing handlers (prevents duplicate output)
     root.handlers.clear()
 
     handler = TqdmLoggingHandler()
-    handler.setFormatter(logging.Formatter(
-        '%(levelname)s:%(name)s:%(message)s'
-    ))
+    handler.setFormatter(ColorFormatter())
     root.addHandler(handler)
 
 
@@ -351,9 +407,9 @@ class SmartICUPipeline:
     # ── Step 4 ────────────────────────────────────────────────────────────────
 
     def train_all_predictors(self, X, y, timestamps, label_names, output_dir='output'):
-        logger.info("=" * 60)
-        logger.info("STEP 4: Training All Predictors")
-        logger.info("=" * 60)
+        logger.info(f"{C.CYAN}{C.BOLD}{'═'*60}{C.RESET}")
+        logger.info(f"{C.CYAN}{C.BOLD}  STEP 4: Training All Predictors{C.RESET}")
+        logger.info(f"{C.CYAN}{C.BOLD}{'═'*60}{C.RESET}")
 
         results         = {}
         predictors_list = list(self.predictors.items())
@@ -374,7 +430,7 @@ class SmartICUPipeline:
 
         for name, predictor in task_bar:
             task_bar.set_postfix_str(f"▶ {name}")
-            logger.info(f"\n── {name}: {predictor.TASK_DESCRIPTION}")
+            logger.info(f"\n{C.MAGENTA}{C.BOLD}── {name}{C.RESET}: {C.DIM}{predictor.TASK_DESCRIPTION}{C.RESET}")
 
             task_result  = predictor.train_all_models(X, y, timestamps, output_dir)
             results[name] = task_result
@@ -389,9 +445,9 @@ class SmartICUPipeline:
     # ── Step 5 ────────────────────────────────────────────────────────────────
 
     def train_readmission(self, output_dir='output', use_cache=True):
-        logger.info("=" * 60)
-        logger.info("STEP 5: ICU Readmission Prediction")
-        logger.info("=" * 60)
+        logger.info(f"{C.CYAN}{C.BOLD}{'═'*60}{C.RESET}")
+        logger.info(f"{C.CYAN}{C.BOLD}  STEP 5: ICU Readmission Prediction{C.RESET}")
+        logger.info(f"{C.CYAN}{C.BOLD}{'═'*60}{C.RESET}")
 
         readmission_cache = self._cache_path('readmission_cache.pkl')
 
@@ -518,11 +574,20 @@ class SmartICUPipeline:
 
     def run(self, sample_size: int = None, use_cache: bool = True):
         start = datetime.now()
-        logger.info("=" * 60)
-        logger.info("SMART ICU ASSISTANT — TRAINING PIPELINE")
-        logger.info(f"Start : {start}")
-        logger.info(f"Data  : {self.data_dir}")
-        logger.info("=" * 60)
+
+        # ── Styled banner ─────────────────────────────────────────────────────
+        banner = [
+            "",
+            f"{C.CYAN}{C.BOLD}╔{'═'*58}╗{C.RESET}",
+            f"{C.CYAN}{C.BOLD}║{'SMART ICU ASSISTANT — TRAINING PIPELINE':^58}║{C.RESET}",
+            f"{C.CYAN}{C.BOLD}╠{'═'*58}╣{C.RESET}",
+            f"{C.CYAN}{C.BOLD}║{C.RESET}  🕐 Start : {C.WHITE}{start.strftime('%Y-%m-%d %H:%M:%S')}{C.RESET}" + " " * 20 + f"{C.CYAN}{C.BOLD}║{C.RESET}",
+            f"{C.CYAN}{C.BOLD}║{C.RESET}  📁 Data  : {C.WHITE}{self.data_dir}{C.RESET}" + " " * (27 - len(self.data_dir)) + f"{C.CYAN}{C.BOLD}║{C.RESET}",
+            f"{C.CYAN}{C.BOLD}╚{'═'*58}╝{C.RESET}",
+            "",
+        ]
+        for line in banner:
+            logger.info(line)
 
         # ── Pipeline-level step bar ───────────────────────────────────────────
         PIPELINE_STEPS = [
@@ -533,15 +598,19 @@ class SmartICUPipeline:
         ]
         pipe_bar = tqdm(
             PIPELINE_STEPS,
-            desc="  Pipeline",
+            desc=f"  {C.CYAN}Pipeline{C.RESET}",
             unit="step",
             file=sys.stderr,
             dynamic_ncols=True,
             leave=True,
+            bar_format=(
+                "{l_bar}{bar:25}| {n_fmt}/{total_fmt} "
+                "[{elapsed}<{remaining}] {postfix}"
+            ),
         )
 
         def next_step(label):
-            pipe_bar.set_description(f"  {label:<35}")
+            pipe_bar.set_description(f"  {C.GREEN}{label:<35}{C.RESET}")
             pipe_bar.update(1)
 
         # Step 1-3: data + features
@@ -549,20 +618,20 @@ class SmartICUPipeline:
 
         if cached is not None:
             X, y, timestamps, label_names = cached
-            logger.info("⚡ Steps 1-3 skipped (cache loaded)")
+            logger.info(f"{C.GREEN}⚡ Steps 1-3 skipped (cache loaded){C.RESET}")
             for predictor in self.predictors.values():
                 predictor.set_label_indices(label_names)
-            logger.info(f"Label indices set from cache ({len(label_names)} labels)")
+            logger.info(f"Label indices set from cache ({C.WHITE}{len(label_names)} labels{C.RESET})")
         else:
             self.load_data()
             X, y, timestamps, label_names = self.extract_features_and_labels(sample_size)
             if len(X) == 0:
-                logger.error("No sequences extracted — aborting")
+                logger.error(f"{C.RED}No sequences extracted — aborting{C.RESET}")
                 return
             self.save_feature_cache(X, y, timestamps, label_names)
 
         if len(X) == 0:
-            logger.error("No sequences — aborting")
+            logger.error(f"{C.RED}No sequences — aborting{C.RESET}")
             return
 
         next_step("Data loaded ✓")
@@ -583,22 +652,40 @@ class SmartICUPipeline:
 
         pipe_bar.close()
 
+        # ── Completion banner ─────────────────────────────────────────────────
         end = datetime.now()
-        logger.info(f"\n{'='*60}")
-        logger.info(f"PIPELINE COMPLETED in {end - start}")
-        logger.info(f"Report: {report_path}")
-        logger.info(f"{'='*60}")
+        elapsed = end - start
+        hours, remainder = divmod(int(elapsed.total_seconds()), 3600)
+        minutes, seconds = divmod(remainder, 60)
+        elapsed_str = f"{hours}h {minutes}m {seconds}s" if hours else f"{minutes}m {seconds}s"
+
+        logger.info("")
+        logger.info(f"{C.GREEN}{C.BOLD}╔{'═'*58}╗{C.RESET}")
+        logger.info(f"{C.GREEN}{C.BOLD}║{'✅  PIPELINE COMPLETED':^58}║{C.RESET}")
+        logger.info(f"{C.GREEN}{C.BOLD}╠{'═'*58}╣{C.RESET}")
+        logger.info(f"{C.GREEN}{C.BOLD}║{C.RESET}  ⏱  Duration : {C.WHITE}{C.BOLD}{elapsed_str}{C.RESET}" + " " * (30 - len(elapsed_str)) + f"{C.GREEN}{C.BOLD}║{C.RESET}")
+        logger.info(f"{C.GREEN}{C.BOLD}║{C.RESET}  📊 Report   : {C.WHITE}{report_path}{C.RESET}" + " " * max(0, 30 - len(report_path)) + f"{C.GREEN}{C.BOLD}║{C.RESET}")
+        logger.info(f"{C.GREEN}{C.BOLD}╚{'═'*58}╝{C.RESET}")
 
     def print_summary(self, results):
-        logger.info(f"\n{'='*70}")
-        logger.info("RESULTS SUMMARY")
-        logger.info(f"{'='*70}")
-        logger.info(f"  {'Task':<15s} {'Model':<14s} {'AUROC':>7s} {'AUPRC':>7s} {'F1':>7s} {'Sens':>7s}")
-        logger.info(f"  {'─'*13}   {'─'*12}   {'─'*5}   {'─'*5}   {'─'*5}   {'─'*5}")
+        logger.info("")
+        logger.info(f"{C.YELLOW}{C.BOLD}╔{'═'*72}╗{C.RESET}")
+        logger.info(f"{C.YELLOW}{C.BOLD}║{'📊  RESULTS SUMMARY':^72}║{C.RESET}")
+        logger.info(f"{C.YELLOW}{C.BOLD}╠{'═'*72}╣{C.RESET}")
+
+        header = (
+            f"{C.YELLOW}{C.BOLD}║{C.RESET} "
+            f"{C.WHITE}{C.BOLD}{'Task':<15s} {'Model':<14s} "
+            f"{'AUROC':>7s} {'AUPRC':>7s} {'F1':>7s} {'Sens':>7s}{C.RESET}"
+            f"   {C.YELLOW}{C.BOLD}║{C.RESET}"
+        )
+        logger.info(header)
+        logger.info(f"{C.YELLOW}{C.BOLD}║{C.RESET} {C.DIM}{'─'*13}   {'─'*12}   {'─'*5}   {'─'*5}   {'─'*5}   {'─'*5}{C.RESET} {C.YELLOW}{C.BOLD}║{C.RESET}")
+
         for name, result in results.items():
             if isinstance(result, dict) and 'best_model' in result:
                 best = result.get('best_model', 'N/A')
-                
+
                 # Standard tasks (with comparison block)
                 if 'comparison' in result:
                     for mname, mmetrics in result.get('comparison', {}).items():
@@ -608,12 +695,23 @@ class SmartICUPipeline:
                             auprc = pm.get('macro_auprc', 0)
                             f1    = pm.get('macro_f1', 0)
                             sens  = pm.get('macro_sensitivity', 0)
-                            star  = " ★" if mname == best else "  "
+
+                            if mname == best:
+                                star = f"{C.GREEN}★{C.RESET}"
+                                mcolor = f"{C.GREEN}{C.BOLD}"
+                            else:
+                                star = " "
+                                mcolor = C.DIM
+
                             logger.info(
-                                f"  {name:<15s}{star}{mname:<12s} "
-                                f"{auroc:>7.4f} {auprc:>7.4f} {f1:>7.4f} {sens:>7.4f}"
+                                f"{C.YELLOW}{C.BOLD}║{C.RESET} "
+                                f"{C.MAGENTA}{name:<15s}{C.RESET}"
+                                f"{star}{mcolor}{mname:<12s}{C.RESET} "
+                                f"{_color_auroc(auroc)} {_color_metric(auprc)} "
+                                f"{_color_metric(f1)} {_color_metric(sens)}"
+                                f" {C.YELLOW}{C.BOLD}║{C.RESET}"
                             )
-                
+
                 # Readmission task (flat metrics)
                 elif 'auroc' in result:
                     auroc = result.get('auroc', 0)
@@ -621,9 +719,15 @@ class SmartICUPipeline:
                     f1    = result.get('f1', 0)
                     sens  = result.get('sensitivity', 0)
                     logger.info(
-                        f"  {name:<15s} ★{best:<12s} "
-                        f"{auroc:>7.4f} {auprc:>7.4f} {f1:>7.4f} {sens:>7.4f}"
+                        f"{C.YELLOW}{C.BOLD}║{C.RESET} "
+                        f"{C.MAGENTA}{name:<15s}{C.RESET}"
+                        f"{C.GREEN}★{C.BOLD}{best:<12s}{C.RESET} "
+                        f"{_color_auroc(auroc)} {_color_metric(auprc)} "
+                        f"{_color_metric(f1)} {_color_metric(sens)}"
+                        f" {C.YELLOW}{C.BOLD}║{C.RESET}"
                     )
+
+        logger.info(f"{C.YELLOW}{C.BOLD}╚{'═'*72}╝{C.RESET}")
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
