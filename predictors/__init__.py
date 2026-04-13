@@ -1,6 +1,6 @@
 """
 Smart ICU Assistant — Predictors Package
-7 prediction tasks: 6 time-series + readmission
+7 prediction tasks: 6 time-series + readmission (19 total labels)
 """
 
 from predictors.base_predictor import BasePredictor
