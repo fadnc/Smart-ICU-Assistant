@@ -221,10 +221,26 @@ class BasePredictor(ABC):
         ens_metrics = self._compute_ensemble_metrics(avg_preds, test_y_ens)
         mean_ens_auroc = ens_metrics.get('macro_auroc', 0.0)
 
+        # Save ensemble pickle with component paths + weights
+        ens_path = os.path.join('models', f'{self.TASK_NAME}_ensemble.pkl')
+        component_paths = [comparison[n].get('model_path', '') for n in model_names]
+        ens_artifact = {
+            'type':                 'weighted_ensemble',
+            'task':                 self.TASK_NAME,
+            'labels':               self.get_label_names(),
+            'component_model_names': model_names,
+            'component_model_paths': component_paths,
+            'weights':              {n: float(w) for n, w in zip(model_names, weights)},
+            'input_size':           pred_list[0].shape[1] if len(pred_list[0].shape) > 1 else 1,
+        }
+        with open(ens_path, 'wb') as f:
+            pickle.dump(ens_artifact, f)
+        logger.info(f"[{self.TASK_NAME}] Saved ensemble → {ens_path}")
+
         comparison['ensemble'] = {
             'mean_test_auroc':  mean_ens_auroc,
             'per_task_metrics': ens_metrics,
-            'model_path':       'ensemble (no single checkpoint)',
+            'model_path':       ens_path,
             'models_used':      model_names,
             'weights':          {n: float(w) for n, w in zip(model_names, weights)},
         }
@@ -238,13 +254,32 @@ class BasePredictor(ABC):
 
         # ── Stacking ensemble ──
         try:
-            stacked_metrics = self._stacked_ensemble(pred_list, test_y_ens, model_names)
-            if stacked_metrics:
+            stacked_result = self._stacked_ensemble(pred_list, test_y_ens, model_names)
+            if stacked_result:
+                stacked_metrics = stacked_result['metrics']
+                meta_learners   = stacked_result['meta_learners']
                 stacked_auroc = stacked_metrics.get('macro_auroc', 0.0)
+
+                # Save stacked ensemble pickle with meta-learners
+                stk_path = os.path.join('models', f'{self.TASK_NAME}_stacked_ensemble.pkl')
+                component_paths = [comparison[n].get('model_path', '') for n in model_names]
+                stk_artifact = {
+                    'type':                 'stacked_ensemble',
+                    'task':                 self.TASK_NAME,
+                    'labels':               self.get_label_names(),
+                    'component_model_names': model_names,
+                    'component_model_paths': component_paths,
+                    'meta_learners':        meta_learners,
+                    'input_size':           pred_list[0].shape[1] if len(pred_list[0].shape) > 1 else 1,
+                }
+                with open(stk_path, 'wb') as f:
+                    pickle.dump(stk_artifact, f)
+                logger.info(f"[{self.TASK_NAME}] Saved stacked ensemble → {stk_path}")
+
                 comparison['stacked_ensemble'] = {
                     'mean_test_auroc':  stacked_auroc,
                     'per_task_metrics': stacked_metrics,
-                    'model_path':       'stacked_ensemble (LR meta-learner)',
+                    'model_path':       stk_path,
                     'models_used':      model_names,
                 }
                 logger.info(
@@ -318,6 +353,7 @@ class BasePredictor(ABC):
         """
         Stacking ensemble: LogisticRegression meta-learner trained on base
         model predictions. Uses half/half split to avoid leakage.
+        Returns dict with 'metrics' and 'meta_learners' for serialization.
         """
         from sklearn.linear_model import LogisticRegression
 
@@ -327,6 +363,7 @@ class BasePredictor(ABC):
 
         # Stack all model predictions: (n_samples, n_models) per task
         stacked_preds = np.zeros((n_samples, n_tasks))
+        meta_learners = []  # one LR per task, saved for inference
 
         for t in range(n_tasks):
             # Build meta-features: each model's prediction for this task
@@ -340,17 +377,19 @@ class BasePredictor(ABC):
             if len(np.unique(meta_train_y)) < 2:
                 # Fallback to mean
                 stacked_preds[half:, t] = np.mean(meta_test_X, axis=1)
+                meta_learners.append(None)  # no learner for this task
                 continue
 
             lr = LogisticRegression(max_iter=1000, random_state=42)
             lr.fit(meta_train_X, meta_train_y)
             stacked_preds[half:, t] = lr.predict_proba(meta_test_X)[:, 1]
+            meta_learners.append(lr)
 
         # Evaluate only the second half (where meta-learner predicted)
         metrics = self._compute_ensemble_metrics(
             stacked_preds[half:], test_y[half:]
         )
-        return metrics
+        return {'metrics': metrics, 'meta_learners': meta_learners}
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
