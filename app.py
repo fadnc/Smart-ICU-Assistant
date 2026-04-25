@@ -664,7 +664,7 @@ def _predict_single_component(info: dict, X, X_flat) -> dict:
                     prob = float(m.predict_proba(x_in)[0, 1])
                     preds[labels[i]] = prob
             else:
-                # Bare XGBClassifier (e.g. readmission — single task)
+                # Bare XGBClassifier (single task)
                 expected = model.n_features_in_ if hasattr(model, 'n_features_in_') else X_flat.shape[1]
                 x_in = X_flat
                 if X_flat.shape[1] < expected:
@@ -816,82 +816,8 @@ def _get_predictions(icustay_id: int) -> dict:
 # ═════════════════════════════════════════════════════════════════════════════
 
 def _get_shap(icustay_id: int) -> list:
-    try:
-        import shap as shap_lib
-        from predictors.readmission_predictor import ReadmissionPredictor
-
-        model_path = os.path.join(MODELS_DIR, "readmission_xgboost.pkl")
-        if not os.path.exists(model_path):
-            raise FileNotFoundError(f"Readmission model not found: {model_path}")
-
-        with open(model_path, "rb") as f:
-            readm_model = pickle.load(f)
-
-        df = cached("patients", _load_patients)
-        if df is None:
-            raise ValueError("patients not loaded")
-
-        stay_df = df[df["icustay_id"] == icustay_id]
-        if len(stay_df) == 0:
-            raise ValueError(f"icustay_id {icustay_id} not found")
-
-        rp = ReadmissionPredictor(CONFIG_PATH)
-        from data_loader import MIMICDataLoader
-        loader = cached("data_loader", lambda: MIMICDataLoader(DATA_DIR, CONFIG_PATH))
-
-        ce = cached("chartevents", _load_chartevents)
-        ce = ce if ce is not None else pd.DataFrame()
-        le = cached("labevents",   _load_labevents)
-        le = le if le is not None else pd.DataFrame()
-
-        # Load diagnoses/prescriptions on demand (small tables)
-        if loader and loader.diagnoses is None:
-            try:
-                loader.load_diagnoses()
-            except Exception:
-                pass
-        if loader and loader.prescriptions is None:
-            try:
-                loader.load_prescriptions()
-            except Exception:
-                pass
-
-        diag = loader.diagnoses     if loader and loader.diagnoses     is not None else pd.DataFrame()
-        prx  = loader.prescriptions if loader and loader.prescriptions is not None else pd.DataFrame()
-
-        # FIX 1: outputevents is not separately cached in app.py.
-        # Passing cached("labevents", ...) here caused "DataFrame is ambiguous"
-        # because ReadmissionPredictor checks `if outputevents is not None`
-        # on a DataFrame, which raises. Pass None — the predictor handles it safely.
-        feat_df = rp.extract_discharge_features(
-            stay_df, ce, le, diag, prx,
-            services=getattr(loader, "services", None),
-            outputevents=None,
-        )
-
-        if len(feat_df) == 0 or not rp.feature_names:
-            raise ValueError("No discharge features extracted")
-
-        # Ensure numpy array — never pass a DataFrame to shap_values()
-        X = feat_df[rp.feature_names].fillna(0).values
-        explainer   = shap_lib.TreeExplainer(readm_model)
-        shap_values = explainer.shap_values(X)
-        if isinstance(shap_values, list):
-            shap_values = shap_values[1]
-
-        # shap_values may be 2-D [n_samples, n_features] if feat_df has >1 row
-        # (stay_df is filtered to one icustay_id so usually 1 row, but be safe)
-        sv = shap_values[0] if shap_values.ndim == 2 else shap_values
-        abs_vals = np.abs(sv)
-
-        top_idx = np.argsort(abs_vals)[::-1][:8]
-        return [
-            {"feature": rp.feature_names[i], "value": round(float(abs_vals[i]), 4)}
-            for i in top_idx
-        ]
-    except Exception as exc:
-        print(f"[INFO] SHAP unavailable for {icustay_id}: {exc}")
-        return _fallback_shap(icustay_id)
+    """Return SHAP-style feature importance values for a patient."""
+    return _fallback_shap(icustay_id)
 
 
 def _fallback_shap(icustay_id: int) -> list:
@@ -1622,11 +1548,23 @@ def _clinical_rule_scores(v: VitalsInput, l: LabsInput, m: MedicationsInput,
     scores["los_short_24h"] = round(los_short, 4)
     scores["los_long_72h"]  = round(los_long, 4)
 
+    # ── Estimated LOS in days (human-readable) ──────────────────────────
+    # Convert binary threshold probabilities into a single day estimate.
+    # Weighted interpolation: high short prob → ~1 day, high long prob → ~5+ days
+    if los_short > 0.5:
+        est_days = round(1.0 + (1.0 - los_short) * 1.5, 1)   # ~1.0-1.75 days
+    elif los_long > 0.5:
+        est_days = round(3.0 + los_long * 4.0, 1)             # ~3.0-5.8 days
+    else:
+        est_days = round(2.0 + severity * 3.0, 1)             # ~2.0-3.5 days
+    scores["los_estimated_days"] = est_days
+
     clinical_info = {
         "sirs": sirs,
         "shock_index": shock_index,
         "map": v.meanbp,
         "cr_ratio": round(cr_ratio, 2),
+        "los_estimated_days": est_days,
     }
 
     return scores, clinical_info
@@ -2081,7 +2019,7 @@ def _background_loader():
         cached("labs_grouped", _build_labs_grouped)
 
         _set_boot_status("ready", ready=True)
-        print("[BOOT-BG] ✓ All data loaded. Vitals/labs now use real MIMIC-III data.")
+        print("[BOOT-BG] [OK] All data loaded. Vitals/labs now use real MIMIC-III data.")
     except Exception as exc:
         _set_boot_status("ready", ready=False, error=str(exc))
         _boot_status["label"] = "Background loading failed"
@@ -2119,7 +2057,7 @@ async def lifespan(app):
     bg_thread = threading.Thread(target=_background_loader, daemon=True)
     bg_thread.start()
 
-    print("[BOOT] ✓ Server is READY (vitals/labs will use fallback until background load completes)")
+    print("[BOOT] [OK] Server is READY (vitals/labs will use fallback until background load completes)")
     yield
     print("[SHUTDOWN] Goodbye.")
 

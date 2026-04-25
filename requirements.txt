@@ -19,7 +19,7 @@ jinja2>=3.1.0
 # Interpretability
 shap>=0.43.0
 
-# Configuration & Utilities
+# Configuration and Utilities
 pyyaml>=6.0
 python-dateutil>=2.8.0
 tqdm>=4.65.0

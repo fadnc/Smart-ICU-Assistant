@@ -250,7 +250,6 @@ def main():
         task = report.get("task", "?")
         best = report.get("best_model", "?")
 
-        # Skip readmission (different format)
         if "best_auroc" not in report:
             print(f"── {task}: skipped (no best_auroc, different format)")
             continue

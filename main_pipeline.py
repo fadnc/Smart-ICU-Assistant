@@ -36,7 +36,6 @@ from predictors import (
     AKIPredictor,
     VasopressorPredictor,
     VentilationPredictor,
-    ReadmissionPredictor,
     LOSPredictor,
 )
 
@@ -164,7 +163,6 @@ class SmartICUPipeline:
             'ventilation': VentilationPredictor(config_path),
             'los':         LOSPredictor(config_path),
         }
-        self.readmission_predictor = ReadmissionPredictor(config_path)
         self.merged_data = None
 
         logger.info("Smart ICU Pipeline initialized")
@@ -444,51 +442,7 @@ class SmartICUPipeline:
 
     # ── Step 5 ────────────────────────────────────────────────────────────────
 
-    def train_readmission(self, output_dir='output', use_cache=True):
-        logger.info(f"{C.CYAN}{C.BOLD}{'═'*60}{C.RESET}")
-        logger.info(f"{C.CYAN}{C.BOLD}  STEP 5: ICU Readmission Prediction{C.RESET}")
-        logger.info(f"{C.CYAN}{C.BOLD}{'═'*60}{C.RESET}")
-
-        readmission_cache = self._cache_path('readmission_cache.pkl')
-
-        if use_cache and os.path.exists(readmission_cache):
-            logger.info("Loading readmission features from cache...")
-            with open(readmission_cache, 'rb') as f:
-                cached = pickle.load(f)
-            features_df  = cached['features_df']
-            labels_df    = cached['labels_df']
-            self.readmission_predictor.feature_names = cached['feature_names']
-            logger.info(f"✓ Readmission cache loaded: {len(features_df):,} stays")
-        else:
-            if self.merged_data is None:
-                self.load_data()
-
-            labels_df   = self.readmission_predictor.extract_readmission_labels(
-                self.data_loader.icu_stays
-            )
-            features_df = self.readmission_predictor.extract_discharge_features(
-                self.merged_data,
-                self.data_loader.chartevents,
-                self.data_loader.labevents,
-                self.data_loader.diagnoses,
-                self.data_loader.prescriptions,
-                services    =getattr(self.data_loader, 'services', None),
-                outputevents=getattr(self.data_loader, 'outputevents', None),
-            )
-            os.makedirs(self.CACHE_DIR, exist_ok=True)
-            with open(readmission_cache, 'wb') as f:
-                pickle.dump({
-                    'features_df':  features_df,
-                    'labels_df':    labels_df,
-                    'feature_names':self.readmission_predictor.feature_names,
-                }, f)
-            logger.info("✓ Readmission features cached")
-
-        return self.readmission_predictor.train(features_df, labels_df, output_dir)
-
-    # ── Step 6 ────────────────────────────────────────────────────────────────
-
-    def save_summary(self, results, readmission_result, output_dir='output'):
+    def save_summary(self, results, output_dir='output'):
         os.makedirs(output_dir, exist_ok=True)
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
 
@@ -507,7 +461,6 @@ class SmartICUPipeline:
                     if isinstance(v, dict) and 'mean_test_auroc' in v
                 },
             }
-        report['readmission'] = readmission_result
 
         path = os.path.join(output_dir, f'metrics_report_{ts}.json')
         with open(path, 'w') as f:
@@ -593,7 +546,6 @@ class SmartICUPipeline:
         PIPELINE_STEPS = [
             "Load / Cache data",
             "Train predictors",
-            "Train readmission",
             "Save report",
         ]
         pipe_bar = tqdm(
@@ -640,13 +592,8 @@ class SmartICUPipeline:
         results = self.train_all_predictors(X, y, timestamps, label_names)
         next_step("Predictors trained ✓")
 
-        # Step 5: readmission
-        readmission_result = self.train_readmission(use_cache=use_cache)
-        results['readmission'] = readmission_result
-        next_step("Readmission trained ✓")
-
-        # Step 6: report
-        report_path = self.save_summary(results, readmission_result)
+        # Step 5: report
+        report_path = self.save_summary(results)
         self.print_summary(results)
         next_step("Report saved ✓")
 
@@ -712,20 +659,7 @@ class SmartICUPipeline:
                                 f" {C.YELLOW}{C.BOLD}║{C.RESET}"
                             )
 
-                # Readmission task (flat metrics)
-                elif 'auroc' in result:
-                    auroc = result.get('auroc', 0)
-                    auprc = result.get('auprc', 0)
-                    f1    = result.get('f1', 0)
-                    sens  = result.get('sensitivity', 0)
-                    logger.info(
-                        f"{C.YELLOW}{C.BOLD}║{C.RESET} "
-                        f"{C.MAGENTA}{name:<15s}{C.RESET}"
-                        f"{C.GREEN}★{C.BOLD}{best:<12s}{C.RESET} "
-                        f"{_color_auroc(auroc)} {_color_metric(auprc)} "
-                        f"{_color_metric(f1)} {_color_metric(sens)}"
-                        f" {C.YELLOW}{C.BOLD}║{C.RESET}"
-                    )
+
 
         logger.info(f"{C.YELLOW}{C.BOLD}╚{'═'*72}╝{C.RESET}")
 

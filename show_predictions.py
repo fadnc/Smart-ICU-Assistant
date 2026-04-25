@@ -42,7 +42,7 @@ def main():
 
     task_order = [
         'mortality', 'sepsis', 'aki',
-        'vasopressor', 'ventilation', 'los', 'readmission',
+        'vasopressor', 'ventilation', 'los',
     ]
 
     print(f"\n{'#':>3} | {'Task':<25} | {'Best Model':<18} | {'Best AUROC':>10} | Models Tried")
@@ -84,7 +84,6 @@ def main():
         ("[4]   VASOPRESSOR",   "XGBoost primary — drug requirement at 6/12h"),
         ("[5]   VENTILATION",   "LSTM / XGBoost — mechanical vent at 6/12/24h"),
         ("[6]   LENGTH OF STAY","XGBoost primary — short (<24h) / long (>72h) stay"),
-        ("[7]   READMISSION",   "XGBoost + SHAP — 30-day ICU readmission"),
     ]
     for cat, desc in categories:
         print(f"  {cat:<20s} — {desc}")
@@ -96,9 +95,6 @@ def main():
     task_report_files = sorted(glob.glob('output/*_report.json'))
     if task_report_files:
         print(f"Task reports:  {len(task_report_files)} files in output/")
-
-    print(f"\nNOTE: TCN removed — BatchNorm1d NaN under FP16 AMP. Active models: LSTM, Transformer, XGBoost.")
-
 
 if __name__ == "__main__":
     main()

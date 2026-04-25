@@ -212,5 +212,6 @@ demo/
 models/
 output/
 report/
-
+*.pdf
 best_model.pth
+Final/

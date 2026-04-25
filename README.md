@@ -1,6 +1,6 @@
 # Smart ICU Assistant
 
-A machine learning pipeline for real-time ICU patient monitoring, clinical risk prediction, and alerting. The system processes MIMIC-III clinical data to predict seven critical outcomes across 19 binary classification labels, using an ensemble of deep learning and gradient-boosted tree models. A FastAPI-powered dashboard provides real-time visualization of patient vitals, lab trends, risk scores, and SHAP-based feature importance.
+A machine learning pipeline for real-time ICU patient monitoring, clinical risk prediction, and alerting. The system processes MIMIC-III clinical data to predict six critical outcomes across 17 binary classification labels, using an ensemble of deep learning and gradient-boosted tree models. A FastAPI-powered dashboard provides real-time visualization of patient vitals, lab trends, risk scores, and feature importance.
 
 ---
 
@@ -25,24 +25,23 @@ A machine learning pipeline for real-time ICU patient monitoring, clinical risk 
 
 ## Overview
 
-The Smart ICU Assistant addresses the need for early warning systems in intensive care units. It ingests patient vitals (heart rate, blood pressure, SpO2, respiratory rate, temperature, glucose) and laboratory values (creatinine, lactate, WBC, hemoglobin, platelets, bicarbonate, chloride) to generate risk predictions across seven clinical categories. Each predictor is trained on MIMIC-III data using temporal cross-validation and evaluated with clinically relevant metrics (AUROC, AUPRC, sensitivity, specificity, Brier score).
+The Smart ICU Assistant addresses the need for early warning systems in intensive care units. It ingests patient vitals (heart rate, blood pressure, SpO2, respiratory rate, temperature, glucose) & laboratory values (creatinine, lactate, WBC, hemoglobin, platelets, bicarbonate, chloride) to generate risk predictions across seven clinical categories. Each predictor is trained on MIMIC-III data using temporal cross-validation and evaluated with clinically relevant metrics .
 
 ### Key Features
 
-- **19 prediction labels** across 7 clinical tasks with configurable time horizons
+- **17 prediction labels** across 6 clinical tasks with configurable time horizons
 - **4 model types** per task: LSTM, Transformer, XGBoost, LightGBM
 - **Automated ensemble**: AUROC-squared weighted averaging and stacking meta-learner
 - **Per-task threshold tuning**: optimizes F1 score on validation set instead of hardcoded 0.5
 - **Mixed-precision training** (FP16 AMP) with NaN-safe loss computation
 - **Feature caching** with normalization flags to skip redundant preprocessing
-- **SHAP interpretability** for the readmission predictor
 - **Real-time dashboard** with vitals charts, lab trends, risk scoring, and clinical alerts
 
 ---
 
 ## Clinical Prediction Tasks
 
-The system implements seven prediction tasks producing 19 binary classification labels:
+The system implements six prediction tasks producing 17 binary classification labels:
 
 | No. | Task | Labels | Time Windows | Clinical Definition |
 |-----|------|--------|-------------|---------------------|
@@ -52,7 +51,6 @@ The system implements seven prediction tasks producing 19 binary classification 
 | 4 | **Vasopressor** | `vasopressor_6h`, `vasopressor_12h` | 6, 12 hours | Vasopressor drug (norepinephrine, epinephrine, vasopressin, dopamine, dobutamine, phenylephrine, milrinone) prescribed or administered via IV within the window |
 | 5 | **Ventilation** | `ventilation_6h`, `ventilation_12h`, `ventilation_24h` | 6, 12, 24 hours | Three-layer detection: CHARTEVENTS ventilation itemids (225792, 225794, 226260), PROCEDUREEVENTS_MV, or ICD-9 procedure codes (9670-9672, 9604, 9390) |
 | 6 | **Length of Stay** | `los_short_24h`, `los_long_72h` | 24, 72 hours | Binary classification of remaining ICU stay. Short: discharged within 24 hours. Long: >72 hours remaining |
-| 7 | **Readmission** | `readmission` | 30 days | Same patient has another ICU admission within 30 days of discharge. Uses tabular discharge features with XGBoost and SHAP explanations |
 
 ---
 
@@ -116,7 +114,6 @@ SEM-4-PROJECT/
 |   |-- vasopressor_predictor.py  # Tasks 13-14: Vasopressor requirement at 6/12h
 |   |-- ventilation_predictor.py  # Tasks 15-17: Mechanical ventilation at 6/12/24h
 |   |-- los_predictor.py          # Tasks 18-19: Length of stay (short/long)
-|   |-- readmission_predictor.py  # Task 20: 30-day ICU readmission (XGBoost + SHAP)
 |
 |-- templates/
 |   |-- base.html                 # Jinja2 base layout with theme toggle
@@ -243,7 +240,7 @@ The dashboard is served by FastAPI and provides:
 
 - **Overview**: KPI tiles (total stays, mean age, mean LOS, mortality rate), risk distribution bar chart, care unit breakdown, critical alerts
 - **Patient List**: Searchable, filterable patient list with composite risk scores and pagination
-- **Patient Detail**: Demographics, current vitals with normal range indicators, HR/MAP and SpO2/RR time-series charts, creatinine/lactate and WBC/hemoglobin lab trend charts, all 19 prediction scores grouped by task category, SHAP feature importance for readmission
+- **Patient Detail**: Demographics, current vitals with normal range indicators, HR/MAP and SpO2/RR time-series charts, creatinine/lactate and WBC/hemoglobin lab trend charts, all 17 prediction scores grouped by task category, SHAP feature importance
 - **New Assessment**: Manual data entry form for clinical parameters (demographics, vitals, labs, medications, ICU context) with instant risk prediction
 - **Validation**: Model performance metrics and training reports
 - **Alerts**: Active critical and warning alerts sorted by severity and score
@@ -362,7 +359,7 @@ See `config.yaml` for the full list of configurable parameters including model h
 ### Training the Pipeline
 
 ```bash
-# Full training run (all 7 tasks)
+# Full training run (all 6 tasks)
 python main_pipeline.py --data_dir data/
 
 # The pipeline will:
@@ -371,8 +368,7 @@ python main_pipeline.py --data_dir data/
 # 3. Cache features to output/ for future runs
 # 4. Train 4 models per task (LSTM, Transformer, XGBoost, LightGBM)
 # 5. Build ensembles (weighted + stacking)
-# 6. Train readmission predictor separately (discharge features + SHAP)
-# 7. Save checkpoints to models/ and reports to output/
+# 6. Save checkpoints to models/ and reports to output/
 ```
 
 ### Viewing Training Results
