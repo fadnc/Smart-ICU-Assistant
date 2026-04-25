@@ -1622,11 +1622,23 @@ def _clinical_rule_scores(v: VitalsInput, l: LabsInput, m: MedicationsInput,
     scores["los_short_24h"] = round(los_short, 4)
     scores["los_long_72h"]  = round(los_long, 4)
 
+    # ── Estimated LOS in days (human-readable) ──────────────────────────
+    # Convert binary threshold probabilities into a single day estimate.
+    # Weighted interpolation: high short prob → ~1 day, high long prob → ~5+ days
+    if los_short > 0.5:
+        est_days = round(1.0 + (1.0 - los_short) * 1.5, 1)   # ~1.0-1.75 days
+    elif los_long > 0.5:
+        est_days = round(3.0 + los_long * 4.0, 1)             # ~3.0-5.8 days
+    else:
+        est_days = round(2.0 + severity * 3.0, 1)             # ~2.0-3.5 days
+    scores["los_estimated_days"] = est_days
+
     clinical_info = {
         "sirs": sirs,
         "shock_index": shock_index,
         "map": v.meanbp,
         "cr_ratio": round(cr_ratio, 2),
+        "los_estimated_days": est_days,
     }
 
     return scores, clinical_info
@@ -2081,7 +2093,7 @@ def _background_loader():
         cached("labs_grouped", _build_labs_grouped)
 
         _set_boot_status("ready", ready=True)
-        print("[BOOT-BG] ✓ All data loaded. Vitals/labs now use real MIMIC-III data.")
+        print("[BOOT-BG] [OK] All data loaded. Vitals/labs now use real MIMIC-III data.")
     except Exception as exc:
         _set_boot_status("ready", ready=False, error=str(exc))
         _boot_status["label"] = "Background loading failed"
@@ -2119,7 +2131,7 @@ async def lifespan(app):
     bg_thread = threading.Thread(target=_background_loader, daemon=True)
     bg_thread.start()
 
-    print("[BOOT] ✓ Server is READY (vitals/labs will use fallback until background load completes)")
+    print("[BOOT] [OK] Server is READY (vitals/labs will use fallback until background load completes)")
     yield
     print("[SHUTDOWN] Goodbye.")
 

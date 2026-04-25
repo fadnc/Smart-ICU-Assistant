@@ -2,33 +2,100 @@
 {% block title %}Smart ICU — Overview{% endblock %}
 
 {% block extra_css %}
-    .hero-banner {
-      background: linear-gradient(135deg, var(--primary) 0%, #0ea5e9 60%, #06b6d4 100%);
-      border-radius: var(--radius); padding: 40px 36px;
-      margin-bottom: 24px; position: relative; overflow: hidden;
-      color: white;
+    /* ── HERO ──────────────────────────────────────────────── */
+    .hero {
+      position: relative; border-radius: var(--radius); padding: 48px 40px;
+      margin-bottom: 28px; overflow: hidden;
+      background: linear-gradient(135deg, #0c1a3a 0%, #0a0f1e 50%, #0f0a24 100%);
+      border: 1px solid var(--border);
     }
-    [data-theme="dark"] .hero-banner {
-      background: linear-gradient(135deg, #0c4a6e 0%, #164e63 60%, #1e3a5f 100%);
+    [data-theme="light"] .hero {
+      background: linear-gradient(135deg, #dbeafe 0%, #ede9fe 50%, #e0f2fe 100%);
     }
-    .hero-banner::before {
-      content: ''; position: absolute; top: -80px; right: -60px;
+    .hero::before {
+      content: ''; position: absolute; top: -120px; right: -80px;
+      width: 400px; height: 400px; border-radius: 50%;
+      background: radial-gradient(circle, rgba(0,212,255,0.08) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .hero::after {
+      content: ''; position: absolute; bottom: -60px; left: 20%;
       width: 300px; height: 300px; border-radius: 50%;
-      background: rgba(255,255,255,0.08); pointer-events: none;
+      background: radial-gradient(circle, rgba(168,85,247,0.06) 0%, transparent 70%);
+      pointer-events: none;
     }
-    .hero-banner::after {
-      content: ''; position: absolute; bottom: -40px; left: 30%;
-      width: 200px; height: 200px; border-radius: 50%;
-      background: rgba(255,255,255,0.05); pointer-events: none;
+    /* Geometric diagonal bars (Increase.com inspired) */
+    .hero-bars {
+      position: absolute; top: 0; right: 0; bottom: 0; width: 45%; overflow: hidden;
+      pointer-events: none; opacity: 0.08;
     }
-    .hero-title { font-size: 36px; font-weight: 700; margin-bottom: 8px; letter-spacing: -0.02em; }
-    .hero-sub { font-size: 15px; opacity: 0.85; max-width: 500px; line-height: 1.6; }
-    .hero-tag {
-      display: inline-flex; align-items: center; gap: 6px; margin-top: 16px;
-      font-size: 12px; font-weight: 600; padding: 5px 14px;
-      background: rgba(255,255,255,0.15); border-radius: 100px;
+    .hero-bars div {
+      position: absolute; width: 200%; height: 30px; border-radius: 4px;
+      transform: rotate(-25deg); transform-origin: top left;
+    }
+    .hero-bars div:nth-child(1) { top: 20px; left: 40%; background: var(--primary); }
+    .hero-bars div:nth-child(2) { top: 70px; left: 35%; background: var(--accent); }
+    .hero-bars div:nth-child(3) { top: 120px; left: 45%; background: var(--primary); }
+    .hero-bars div:nth-child(4) { top: 170px; left: 30%; background: var(--accent); }
+
+    .hero-title {
+      font-family: var(--ff-display); font-size: 52px; font-weight: 800;
+      letter-spacing: -0.04em; line-height: 1.05; margin-bottom: 12px;
+      color: var(--text-1); position: relative;
+    }
+    .hero-title .gradient-text {
+      background: var(--gradient-accent); -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .hero-sub {
+      font-size: 15px; color: var(--text-2); max-width: 480px;
+      line-height: 1.7; position: relative;
+    }
+    .hero-pills {
+      display: flex; gap: 8px; margin-top: 20px; flex-wrap: wrap; position: relative;
+    }
+    .hero-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 12px; font-weight: 600; padding: 6px 16px;
+      background: rgba(255,255,255,0.06); border: 1px solid var(--border);
+      border-radius: var(--radius-pill); color: var(--text-2);
       backdrop-filter: blur(4px);
     }
+    [data-theme="light"] .hero-pill {
+      background: rgba(0,0,0,0.04); border-color: rgba(0,0,0,0.08);
+    }
+    .hero-pill .pill-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+    }
+
+    /* ── LINK CARDS (quick actions) ─────────────────────────── */
+    .link-card {
+      display: block; text-decoration: none;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 24px;
+      box-shadow: var(--shadow); position: relative; overflow: hidden;
+      backdrop-filter: blur(8px);
+      transition: all var(--transition);
+    }
+    .link-card:hover {
+      transform: translateY(-4px); box-shadow: var(--shadow-lg);
+      border-color: var(--border-2);
+    }
+    .link-card::after {
+      content: '→'; position: absolute; right: 20px; top: 50%;
+      transform: translateY(-50%); font-size: 18px; color: var(--text-3);
+      transition: all var(--transition);
+    }
+    .link-card:hover::after { color: var(--primary); right: 16px; }
+    .link-icon-pill {
+      width: 40px; height: 40px; border-radius: var(--radius-sm);
+      display: grid; place-items: center; margin-bottom: 12px;
+    }
+    .link-icon-pill svg { width: 20px; height: 20px; }
+    .link-title { font-size: 14px; font-weight: 600; color: var(--text-1); margin-bottom: 4px; }
+    .link-desc { font-size: 13px; color: var(--text-3); max-width: 80%; }
+
+    /* ── MODEL ITEM ─────────────────────────────────────────── */
     .model-item {
       display: flex; align-items: center; justify-content: space-between;
       padding: 10px 0; border-bottom: 1px solid var(--border);
@@ -38,35 +105,52 @@
     .model-item:hover { padding-left: 4px; }
     .model-name { font-size: 13px; color: var(--text-2); font-weight: 500; }
     .model-tag {
-      font-size: 10px; font-weight: 600; padding: 2px 8px;
+      font-size: 10px; font-weight: 600; padding: 2px 10px;
       border-radius: 100px; background: var(--success-bg);
       color: var(--success); border: 1px solid var(--success-border);
     }
-    .link-card {
-      display: block; text-decoration: none;
-      background: var(--bg-card); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 24px;
-      box-shadow: var(--shadow); position: relative; overflow: hidden;
-      transition: all var(--transition);
+
+    /* ── DONUT CHART (CSS-only risk distribution) ────────────── */
+    .donut-wrap { display: flex; align-items: center; gap: 24px; }
+    .donut {
+      width: 100px; height: 100px; border-radius: 50%; position: relative;
+      flex-shrink: 0;
     }
-    .link-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
-    .link-card::after {
-      content: '→'; position: absolute; right: 20px; top: 50%;
-      transform: translateY(-50%); font-size: 18px; color: var(--text-3);
-      transition: all var(--transition);
+    .donut-center {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      width: 52px; height: 52px; border-radius: 50%; background: var(--bg-card-solid);
+      display: grid; place-items: center;
+      font-size: 12px; font-weight: 700; color: var(--text-2);
     }
-    .link-card:hover::after { color: var(--primary); right: 16px; }
-    .link-icon { font-size: 24px; margin-bottom: 10px; }
-    .link-title { font-size: 14px; font-weight: 600; color: var(--text-1); margin-bottom: 4px; }
-    .link-desc { font-size: 13px; color: var(--text-3); max-width: 80%; }
+    .donut-legend { display: flex; flex-direction: column; gap: 8px; }
+    .legend-item {
+      display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-2);
+    }
+    .legend-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    .legend-val { font-family: var(--ff-mono); font-weight: 600; margin-left: auto; }
+
+    @media (max-width: 768px) {
+      .hero-title { font-size: 32px; }
+      .hero { padding: 32px 24px; }
+      .hero-bars { display: none; }
+    }
 {% endblock %}
 
 {% block content %}
 <!-- Hero -->
-<div class="hero-banner fade-up">
-  <div class="hero-title">Smart ICU Assistant</div>
+<div class="hero fade-up">
+  <div class="hero-bars"><div></div><div></div><div></div><div></div></div>
+  <div class="hero-title">
+    <span class="gradient-text">Smart</span> ICU<br/>Assistant
+  </div>
   <div class="hero-sub">Real-time ICU patient monitoring and multi-task risk prediction powered by deep learning ensembles on MIMIC-III clinical data.</div>
-  <div class="hero-tag"><span class="icon icon-sm" style="color:white;"><svg viewBox="0 0 24 24" fill="white"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-1 11h-4v4h-4v-4H6v-4h4V6h4v4h4v4z"/></svg></span> {{ stats.total_stays | default(0) }} ICU Stays Monitored</div>
+  <div class="hero-pills">
+    <span class="hero-pill"><span class="pill-dot" style="background:var(--primary);"></span> {{ stats.total_stays | default(0) }} ICU Stays</span>
+    <span class="hero-pill"><span class="pill-dot" style="background:var(--success);"></span> {{ stats.total_patients | default(0) }} Patients</span>
+    <span class="hero-pill"><span class="pill-dot" style="background:var(--accent);"></span> {{ models | length }} Models</span>
+  </div>
 </div>
 
 <!-- Risk Alert Banner -->
@@ -82,7 +166,7 @@
 {% endif %}
 
 <!-- Stat Cards -->
-<div class="grid-4 fade-up fade-up-1" style="margin-bottom: 20px;">
+<div class="grid-4 fade-up fade-up-1" style="margin-bottom: 24px;">
   <div class="stat-tile">
     <div class="stat-icon-svg" style="background: var(--primary-bg); color: var(--primary);"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 13c1.66 0 3-1.34 3-3S8.66 7 7 7s-3 1.34-3 3 1.34 3 3 3zm12-6h-8v7H3V5H1v15h2v-3h18v3h2v-9c0-2.21-1.79-4-4-4z"/></svg></div>
     <div class="stat-label">Total ICU Stays</div>
@@ -109,7 +193,7 @@
 
 <!-- Model Performance Summary -->
 {% if report_data %}
-<div class="card fade-up fade-up-4" style="margin-top: 20px;">
+<div class="card fade-up fade-up-2" style="margin-bottom: 20px;">
   <div class="card-head">
     <span class="card-label"><span class="icon icon-sm" style="color:var(--primary);"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99l1.5 1.5z"/></svg></span> Model Performance</span>
     <span class="card-badge">{{ report_data | length }} tasks</span>
@@ -131,7 +215,7 @@
 {% endif %}
 
 <!-- Models & Risk -->
-<div class="grid-2 fade-up fade-up-2">
+<div class="grid-2 fade-up fade-up-3">
   <div class="card">
     <div class="card-head">
       <span class="card-label"><span class="icon icon-sm" style="color:var(--primary);"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 1.07V9h7c0-4.08-3.05-7.44-7-7.93zM4 15c0 4.42 3.58 8 8 8s8-3.58 8-8v-4H4v4zm7-13.93C7.05 1.56 4 4.92 4 9h7V1.07z"/></svg></span> Trained Models</span>
@@ -161,18 +245,23 @@
     </div>
     <div class="card-body">
       {% if stats.risk_dist %}
-        {% for level, count in stats.risk_dist.items() %}
-        <div class="bar-row">
-          <span class="bar-label">
-            <span class="badge badge-{{ level | lower }}" style="font-size:10px;">{{ level }}</span>
-          </span>
-          <div class="bar-track">
-            {% set pct = (count / stats.total_stays * 100) if stats.total_stays else 0 %}
-            <div class="bar-fill" style="width:{{ pct }}%; background:{% if level == 'HIGH' %}var(--danger){% elif level == 'MEDIUM' %}var(--warning){% else %}var(--success){% endif %};"></div>
+        {% set total = stats.total_stays or 1 %}
+        {% set high = stats.risk_dist.get('HIGH', 0) %}
+        {% set med = stats.risk_dist.get('MEDIUM', 0) %}
+        {% set low = stats.risk_dist.get('LOW', 0) %}
+        {% set hp = (high / total * 100) %}
+        {% set mp = (med / total * 100) %}
+        {% set lp = (low / total * 100) %}
+        <div class="donut-wrap">
+          <div class="donut" style="background: conic-gradient(var(--danger) 0% {{ hp }}%, var(--warning) {{ hp }}% {{ hp + mp }}%, var(--success) {{ hp + mp }}% 100%);">
+            <div class="donut-center">{{ total }}</div>
           </div>
-          <span class="bar-value" style="color:var(--text-2);">{{ count }}</span>
+          <div class="donut-legend">
+            <div class="legend-item"><span class="legend-dot" style="background:var(--danger);"></span> HIGH <span class="legend-val" style="color:var(--danger);">{{ high }}</span></div>
+            <div class="legend-item"><span class="legend-dot" style="background:var(--warning);"></span> MEDIUM <span class="legend-val" style="color:var(--warning);">{{ med }}</span></div>
+            <div class="legend-item"><span class="legend-dot" style="background:var(--success);"></span> LOW <span class="legend-val" style="color:var(--success);">{{ low }}</span></div>
+          </div>
         </div>
-        {% endfor %}
       {% else %}
         <div class="empty-state">
           <div class="empty-text">Risk data loading…</div>
@@ -183,24 +272,24 @@
 </div>
 
 <!-- Quick Links -->
-<div class="grid-4 fade-up fade-up-3" style="margin-top: 20px;">
-  <a href="/patients" class="link-card" style="border-left: 3px solid var(--primary);">
-    <div class="link-icon"><span class="icon icon-lg" style="color:var(--primary);"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg></span></div>
+<div class="grid-4 fade-up fade-up-4" style="margin-top: 24px;">
+  <a href="/patients" class="link-card">
+    <div class="link-icon-pill" style="background:var(--primary-bg); color:var(--primary);"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg></div>
     <div class="link-title">Browse Patients</div>
     <div class="link-desc">Search and explore all ICU stays in MIMIC-III</div>
   </a>
-  <a href="/validation" class="link-card" style="border-left: 3px solid var(--success);">
-    <div class="link-icon"><span class="icon icon-lg" style="color:var(--success);"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg></span></div>
+  <a href="/validation" class="link-card">
+    <div class="link-icon-pill" style="background:var(--success-bg); color:var(--success);"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg></div>
     <div class="link-title">Validation Demo</div>
     <div class="link-desc">Predict test patients and compare with ground truth</div>
   </a>
-  <a href="/predict" class="link-card" style="border-left: 3px solid var(--accent);">
-    <div class="link-icon"><span class="icon icon-lg" style="color:var(--accent);"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3c1.93 0 3.5 1.57 3.5 3.5S13.93 13 12 13s-3.5-1.57-3.5-3.5S10.07 6 12 6zm7 13H5v-.23c0-.62.28-1.2.76-1.58C7.47 15.82 9.64 15 12 15s4.53.82 6.24 2.19c.48.38.76.97.76 1.58V19z"/></svg></span></div>
+  <a href="/predict" class="link-card">
+    <div class="link-icon-pill" style="background:rgba(168,85,247,0.1); color:var(--accent);"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3c1.93 0 3.5 1.57 3.5 3.5S13.93 13 12 13s-3.5-1.57-3.5-3.5S10.07 6 12 6zm7 13H5v-.23c0-.62.28-1.2.76-1.58C7.47 15.82 9.64 15 12 15s4.53.82 6.24 2.19c.48.38.76.97.76 1.58V19z"/></svg></div>
     <div class="link-title">New Patient Prediction</div>
     <div class="link-desc">Enter vitals and labs to get real-time risk assessment</div>
   </a>
-  <a href="/docs" target="_blank" class="link-card" style="border-left: 3px solid var(--warning);">
-    <div class="link-icon"><span class="icon icon-lg" style="color:var(--warning);"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg></span></div>
+  <a href="/docs" target="_blank" class="link-card">
+    <div class="link-icon-pill" style="background:var(--warning-bg); color:var(--warning);"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg></div>
     <div class="link-title">API Documentation</div>
     <div class="link-desc">Swagger UI with all REST endpoints</div>
   </a>
@@ -218,14 +307,14 @@
     var target = parseFloat(text);
     if (isNaN(target)) return;
     var decimals = isFloat ? (text.split('.')[1] || '').length : 0;
-    var duration = 1200;
+    var duration = 1400;
     var start = 0;
     var startTime = null;
     el.textContent = isFloat ? (0).toFixed(decimals) : '0';
     function step(ts) {
       if (!startTime) startTime = ts;
       var progress = Math.min((ts - startTime) / duration, 1);
-      var eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+      var eased = 1 - Math.pow(1 - progress, 4); // ease-out quartic
       var current = start + (target - start) * eased;
       el.textContent = isFloat ? current.toFixed(decimals) : Math.round(current).toString();
       if (progress < 1) requestAnimationFrame(step);

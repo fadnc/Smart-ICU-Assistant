@@ -5,24 +5,24 @@
     .val-hero {
       background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-card-2) 100%);
       border: 1px solid var(--border); border-radius: var(--radius);
-      padding: 28px 32px; margin-bottom: 20px; position: relative; overflow: hidden;
-      box-shadow: var(--shadow);
+      padding: 32px 36px; margin-bottom: 24px; position: relative; overflow: hidden;
+      box-shadow: var(--shadow); backdrop-filter: blur(8px);
     }
     .val-hero::before {
-      content: ''; position: absolute; top: -50px; right: -50px;
-      width: 180px; height: 180px; border-radius: 50%;
-      background: radial-gradient(circle, var(--primary-bg) 0%, transparent 70%);
-      pointer-events: none;
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: var(--gradient-accent);
     }
     .summary-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-top: 18px; }
     .summary-stat {
       background: var(--bg-card-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
-      padding: 14px 16px; text-align: center;
+      padding: 16px 18px; text-align: center; backdrop-filter: blur(4px);
+      transition: transform var(--transition), box-shadow var(--transition);
     }
-    .summary-stat .s-val { font-size: 24px; font-weight: 700; line-height: 1; }
+    .summary-stat:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+    .summary-stat .s-val { font-family: var(--ff-display); font-size: 26px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
     .summary-stat .s-label {
-      font-size: 10px; font-weight: 600; color: var(--text-3);
-      letter-spacing: 0.06em; text-transform: uppercase; margin-top: 4px;
+      font-size: 9px; font-weight: 700; color: var(--text-3);
+      letter-spacing: 0.08em; text-transform: uppercase; margin-top: 6px;
     }
     .val-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
     .val-row {

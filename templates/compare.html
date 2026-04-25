@@ -6,23 +6,24 @@
       display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 20px;
     }
     .compare-input {
-      padding: 10px 14px; background: var(--bg-input); border: 1px solid var(--border-2);
-      border-radius: var(--radius-sm); color: var(--text-1); font-size: 13px;
+      padding: 11px 16px; background: var(--bg-input); border: 1px solid var(--border-2);
+      border-radius: var(--radius-pill); color: var(--text-1); font-size: 13px;
       font-family: var(--ff-mono); outline: none; width: 160px;
-      transition: border-color var(--transition);
+      transition: border-color var(--transition), box-shadow var(--transition);
+      backdrop-filter: blur(4px);
     }
-    .compare-input:focus { border-color: var(--primary); }
+    .compare-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-bg); }
     .compare-grid { display: grid; gap: 16px; }
     .compare-grid-2 { grid-template-columns: 1fr 1fr; }
     .compare-grid-3 { grid-template-columns: 1fr 1fr 1fr; }
     .compare-col { min-width: 0; }
     .compare-header {
-      padding: 16px; text-align: center; border-bottom: 2px solid var(--border);
-      margin-bottom: 12px;
+      padding: 18px; text-align: center; border-bottom: 2px solid var(--border);
+      margin-bottom: 12px; background: var(--bg-card-2); border-radius: var(--radius-sm);
     }
     .compare-header .c-id {
-      font-size: 20px; font-weight: 700; font-family: var(--ff-mono);
-      color: var(--primary); margin-bottom: 4px;
+      font-family: var(--ff-display); font-size: 22px; font-weight: 800;
+      color: var(--primary); margin-bottom: 6px; letter-spacing: -0.02em;
     }
     .compare-row {
       display: flex; justify-content: space-between; align-items: center;

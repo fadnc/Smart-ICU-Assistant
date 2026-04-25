@@ -1,6 +1,6 @@
 """
 Smart ICU Assistant — Predictors Package
-7 prediction tasks: 6 time-series + readmission (19 total labels)
+6 prediction tasks: 6 time-series (17 total labels)
 """
 
 from predictors.base_predictor import BasePredictor
@@ -9,7 +9,6 @@ from predictors.sepsis_predictor import SepsisPredictor
 from predictors.aki_predictor import AKIPredictor
 from predictors.vasopressor_predictor import VasopressorPredictor
 from predictors.ventilation_predictor import VentilationPredictor
-from predictors.readmission_predictor import ReadmissionPredictor
 from predictors.los_predictor import LOSPredictor
 
 __all__ = [
@@ -19,6 +18,5 @@ __all__ = [
     'AKIPredictor',
     'VasopressorPredictor',
     'VentilationPredictor',
-    'ReadmissionPredictor',
     'LOSPredictor',
 ]
