@@ -1,7 +1,7 @@
 # Smart ICU Assistant — Complete Project Documentation
 
-> **Combined from**: `System_Arch.md`, `new-arch.md`, `new_log.md`, `why.md`
-> This is the single-source-of-truth reference for architecture, design decisions, and development history.
+> **Single-source-of-truth** reference for architecture, design decisions, and development history.
+> **Last updated**: April 2026
 
 ---
 
@@ -27,7 +27,7 @@
 
 ### About MIMIC-III
 
-MIMIC-III is a publicly available clinical database of **~46,000 patients** admitted to the ICU at Beth Israel Deaconess Medical Center (Boston) between 2001–2012. All dates are **shifted to the 2100–2200 range** for de-identification, but are internally consistent per patient (relative time differences are preserved). Patients >89 years old have DOB shifted ~300 years before admission (clamped to 91.4 years).
+MIMIC-III is a publicly available clinical database of **~46,000 patients** admitted to the ICU at Beth Israel Deaconess Medical Center (Boston) between 2001–2012. Total size: **~43 GB**. All dates are **shifted to the 2100–2200 range** for de-identification, but are internally consistent per patient (relative time differences are preserved). Patients >89 years old have DOB shifted ~300 years before admission (clamped to 91.4 years).
 
 ### The 14 CSV Files We Load
 
@@ -59,12 +59,12 @@ The data loader reads tables in a **specific order** because some tables depend 
 
 ### CHARTEVENTS Chunked Loading
 
-CHARTEVENTS is **33.6 GB** / **330 million rows**. It tracks everything the nurse charts: heart rate, blood pressure, ventilator settings, Glasgow Coma Scale, etc.
+CHARTEVENTS is **33.6 GB** / **330 million rows**.
 
 **Strategy** (can't fit 330M rows in RAM):
 
-1. Get the 32 relevant itemids (vitals + ventilation) via `_get_relevant_chartevents_itemids()` — e.g., 220045 (HR), 220050/220051 (SysBP/DiaBP), 220210 (RR)
-2. Read CSV in chunks of 2,000,000 rows using `pd.read_csv(filepath, chunksize=2_000_000)`. Only loads 6 columns: `SUBJECT_ID, HADM_ID, ICUSTAY_ID, ITEMID, CHARTTIME, VALUENUM`
+1. Get the 32 relevant itemids (vitals + ventilation) via `_get_relevant_chartevents_itemids()`
+2. Read CSV in chunks of 2,000,000 rows. Only loads 6 columns: `SUBJECT_ID, HADM_ID, ICUSTAY_ID, ITEMID, CHARTTIME, VALUENUM`
 3. Filter each chunk: keep only rows where `itemid ∈ {32 relevant IDs}` — drops ~85% of rows
 4. Concatenate kept chunks → ~50M rows (from 330M), fits in ~4-6 GB RAM
 
@@ -124,8 +124,6 @@ meanbp         = (sysbp + 2 * diasbp) / 3   # < 65 mmHg = insufficient organ per
 
 ### SIRS Score (0–4)
 
-Computed at each timepoint from vitals + labs:
-
 ```
 +1 if temperature > 38.3°C or < 36.0°C
 +1 if heart rate > 90 bpm
@@ -144,22 +142,21 @@ For each feature, rolling window statistics are computed:
 - **Per window, per feature → 5 statistics**: mean, std, min, max, trend (slope)
 - Example: `heartrate_6h_mean`, `heartrate_6h_std`, etc.
 
-This turns ~15 raw features into **~90+ engineered features** per timepoint.
+This turns ~15 raw features into **81 engineered features** per timepoint.
 
 ### Sequence Creation
 
-Deep learning models (LSTM, Transformer) need fixed-length sequences. A sliding window is used:
+Deep learning models (LSTM, Transformer) need fixed-length sequences:
 
 ```
-Parameters: sequence_length = 24, step_size = 6
+Parameters: sequence_length = 24, step_size = 12
 
 For a 72-hour stay:
   Sequence 1: hours [0–23]   → predict what happens after hour 23
-  Sequence 2: hours [6–29]   → predict what happens after hour 29
+  Sequence 2: hours [12–35]  → predict what happens after hour 35
   ...
-  Sequence 9: hours [48–71]  → predict what happens after hour 71
 
-Output shape: [n_sequences, 24, n_features]
+Output shape: [n_sequences, 24, 81]
 ```
 
 ---
@@ -169,13 +166,15 @@ Output shape: [n_sequences, 24, n_features]
 Each prediction task uses different time horizons because **clinical interventions have different lead times**:
 
 | Task | Windows | Rationale |
-|------|---------|-----------|
+|------|---------|-----------| 
 | **Mortality** | 6, 12, 24h | 6h = code blue/palliative; 12h = family notification; 24h = standard planning horizon |
 | **Sepsis** | 6, 12, 24h | 6h = "golden hour" (early antibiotics reduce mortality 7%/hr); 12h = targeted antibiotic switch; 24h = full workup |
 | **AKI** | 24, 48h | Kidneys are slow — creatinine rises 12-24h **after** injury. KDIGO requires 0.3 mg/dL rise within 48h |
-| **Hypotension** | 1, 3, 6h | MAP < 65 = organs not getting blood NOW. 3h = fluid resuscitation bundle. Not 12/24h — too many confounders |
 | **Vasopressor** | 6, 12h | 6h = urgent hemodynamic support; 12h = OR scheduling. Not 24h — depends on treatment response |
 | **Ventilation** | 6, 12, 24h | 6h = prepare intubation team; 12h = ICU bed planning; 24h = resource allocation (ventilators are limited) |
+| **Length of Stay** | 24h, 72h | 24h = imminent discharge planning; 72h = extended care resource allocation |
+
+**Removed Tasks**: Hypotension (1/3/6h) and ICU Readmission (48-72h) from the original PDF design were dropped during implementation — Hypotension overlaps with vasopressor prediction, and Readmission relies on static features with minimal sequential dependency, making it unsuitable for the time-series pipeline.
 
 ---
 
@@ -197,8 +196,6 @@ A **label** is the ground truth the model learns: "Did this bad thing actually h
 - Stage 3: ≥ 3.0× baseline OR > 4.0 mg/dL absolute
 - Stages are cumulative (Stage 3 → also Stage 2 = 1, Stage 1 = 1)
 
-**Hypotension**: `label = 1` if any MAP reading < 65 mmHg in window
-
 **Vasopressor**: `label = 1` if vasopressor started in window. Checks PRESCRIPTIONS (drug keywords) and INPUTEVENTS_MV (itemids 221906, 221289, 222315, 221749, 221662)
 
 **Ventilation**: Three-layer detection (any triggers label = 1): CHARTEVENTS itemids (225792, 225794, 226260), PROCEDUREEVENTS_MV, ICD-9 codes (9670-9672, 9604, 9390)
@@ -214,8 +211,10 @@ A **label** is the ground truth the model learns: "Did this bad thing actually h
   aki_stage1_48h, aki_stage2_48h, aki_stage3_48h,      # 10-12
   vasopressor_6h, vasopressor_12h,                     # 13-14
   ventilation_6h, ventilation_12h, ventilation_24h,    # 15-17
-  los_short_24h, los_long_72h ]                        # 16-17
+  los_short_24h, los_long_72h ]                        # 18-19
 ```
+
+> **Note**: The label vector contains 19 entries during feature extraction, but training uses **17 task-specific labels** (LOS labels are indexed separately). Each predictor extracts only its own labels via `set_label_indices()`.
 
 ---
 
@@ -223,40 +222,63 @@ A **label** is the ground truth the model learns: "Did this bad thing actually h
 
 **Source file**: `models.py`
 
-### Current Models (3 per task)
+### Current Models (4 per task + 2 ensembles)
 
 | Model | Type | Strengths | Best for |
 |-------|------|-----------|----------|
-| **LSTM** | Recurrent Neural Net | Long-term memory, captures deterioration trends | Mortality, Ventilation, Sepsis |
-| **Transformer** | Attention-based | Cross-feature attention, subtle interactions | Sepsis (temp × HR × WBC) |
-| **XGBoost** | Gradient-boosted trees | Handles class imbalance, interpretable | Vasopressor, LOS, Mortality |
+| **LSTM** | Bidirectional RNN with Attention | Long-term memory, captures deterioration trends | Mortality, Ventilation |
+| **Transformer** | Pre-LayerNorm Attention Encoder | Cross-feature attention, subtle interactions | Sepsis (temp × HR × WBC) |
+| **XGBoost** | Gradient-boosted trees | Handles class imbalance, interpretable via SHAP | Vasopressor, AKI, LOS |
+| **LightGBM** | Leaf-wise gradient-boosted trees | Different growth strategy, adds ensemble diversity | AKI, LOS |
+| **Weighted Ensemble** | AUROC²-weighted average of all 4 | Combines strengths, reduces variance | Mortality, Vasopressor |
+| **Stacked Ensemble** | LogisticRegression meta-learner | Learns optimal model combination per task | Sepsis, AKI, Ventilation, LOS |
 
-### LSTM (Bidirectional, 2-layer)
+**Removed**: TCN (Temporal Convolutional Network) — `nn.BatchNorm1d` collapses under FP16 AMP with imbalanced ICU labels, producing NaN loss from epoch 2-7.
+
+### LSTM (Bidirectional, 2-layer, with Temporal Attention)
 
 ```
-Input [batch, 24, features]
+Input [batch, 24, 81]
   → Bidirectional LSTM (hidden=128, layers=2, dropout=0.3)
-  → Attention pooling over time steps
-  → Dropout (0.3) → Linear → Sigmoid → [batch, num_tasks]
+  → Temporal Attention pooling (learns which timesteps matter most)
+  → Per-task heads: Linear(256→64) → ReLU → Dropout → Linear(64→1)
+  → Concatenate → [batch, num_tasks]
 ```
 
-### Transformer Encoder
+### Transformer Encoder (Pre-LayerNorm)
 
 ```
-Input [batch, 24, features]
+Input [batch, 24, 81]
+  → Linear projection (81 → 128)
   → Positional Encoding
   → TransformerEncoder (d_model=128, heads=8, layers=3, norm_first=True)
-  → Mean pooling → Linear → Sigmoid → [batch, num_tasks]
+  → FP32 autocast for attention (prevents FP16 overflow)
+  → Mean pooling → Linear(128→64) → ReLU → Linear(64→num_tasks)
 ```
 
 ### XGBoost (one model per label)
 
 ```
-Input [n_samples, 24, features] → flatten → [n_samples, 24 × features]
-  → 17 independent XGBClassifier models
+Input [n_samples, 24, 81] → flatten → [n_samples, 1944]
+  → Per-task XGBClassifier with auto scale_pos_weight
   → max_depth=8, 300 trees, early stopping (20 rounds)
   → tree_method='hist', device='cuda'
+```
 
+### LightGBM (one model per label)
+
+```
+Input [n_samples, 24, 81] → flatten → [n_samples, 1944]
+  → Per-task LGBMClassifier with auto scale_pos_weight
+  → num_leaves=63, 300 trees, early stopping (20 rounds)
+  → Leaf-wise growth (different from XGBoost's level-wise)
+```
+
+### Ensemble Methods
+
+**Weighted Ensemble**: Each model's contribution is weighted by AUROC², so better-performing models have more influence.
+
+**Stacked Ensemble**: A LogisticRegression meta-learner is trained on base model predictions (half/half split to avoid leakage), learning the optimal combination per task.
 
 ### Best Model Selection
 
@@ -265,12 +287,24 @@ For each task (e.g., "sepsis"):
   1. Train LSTM        → test AUROC
   2. Train Transformer → test AUROC
   3. Train XGBoost     → test AUROC
+  4. Train LightGBM    → test AUROC
+  5. Weighted Ensemble → test AUROC
+  6. Stacked Ensemble  → test AUROC
 
-  → Save the model with highest AUROC
+  → Best model = highest AUROC across all 6
   → Save report to output/<task>_report.json
 ```
 
-**AUROC interpretation**: 0.5 = random guessing, 0.7 = acceptable, 0.8 = good, 0.9+ = excellent.
+### Achieved Results (Full MIMIC-III)
+
+| Task | Best Model | AUROC | Labels |
+|------|-----------|-------|--------|
+| Mortality | Ensemble | 0.7906 | 3 |
+| Sepsis | Stacked Ensemble | 0.8015 | 3 |
+| AKI | Stacked Ensemble | 0.8249 | 6 |
+| Vasopressor | Ensemble | 0.8032 | 2 |
+| Ventilation | Stacked Ensemble | 0.8531 | 3 |
+| LOS | Stacked Ensemble | 0.7940 | 2 |
 
 ---
 
@@ -284,11 +318,9 @@ For each task (e.g., "sepsis"):
 python main_pipeline.py --data_dir data
 ```
 
-**Steps**: Load Data → Pre-index (group by icustay_id) → Feature Engineering → Label Generation → Train 3 Models Per Task → Save Reports
+**Steps**: Load Data → Pre-index (group by icustay_id) → Feature Engineering → Label Generation → Normalize (StandardScaler) → Train 4 Models + Ensembles Per Task → Save Reports
 
 ### Temporal Split (no data leakage)
-
-Data is split **chronologically**, not randomly, to prevent leaking future information into training:
 
 ```
 Sort all sequences by (shifted) timestamp — relative order preserved
@@ -302,33 +334,23 @@ Sort all sequences by (shifted) timestamp — relative order preserved
 | Optimization | Effect |
 |-------------|--------|
 | Mixed Precision (FP16) | Halves memory → model fits in 4GB |
-| Gradient Accumulation | batch 32 × 2 steps = effective batch 64 |
+| Gradient Accumulation | batch 64 × 1 step = effective batch 64 |
 | Pin Memory + non_blocking | Faster CPU→GPU data transfer |
 | VRAM Cleanup | `torch.cuda.empty_cache()` between models |
 | XGBoost `device=cuda` | GPU-accelerated tree boosting |
 | `BCEWithLogitsLoss` | Numerically stable under AMP (fused sigmoid + BCE) |
 | Gradient Clipping | `clip_grad_norm_(max_norm=1.0)` prevents exploding gradients |
+| StandardScaler normalization | Prevents NaN loss from raw feature scale differences |
 
 ### Feature Cache
 
 After the first run, features are cached to disk:
-- `feature_cache_X.npy` — Feature matrix (memory-mapped for large datasets)
-- `feature_cache_y.npy` — Label matrix
-- `feature_cache_meta.pkl` — Metadata (label names, timestamps, scaler)
+- `feature_cache_X.npy` — Feature matrix (81 features, normalized)
+- `feature_cache_y.npy` — Label matrix (17-19 labels)
+- `feature_cache_meta.pkl` — Metadata (label names, timestamps)
 - `feature_cache_normalized.flag` — Normalization indicator
 
 Subsequent runs skip feature extraction entirely and load from cache.
-
-### Resource Estimates
-
-| Metric | Demo (100 patients) | Full MIMIC-III |
-|--------|-------------------|----------------|
-| Patients | 100 | ~46,000 |
-| ICU Stays | 136 | ~61,000 |
-| Sequences | 1,931 | ~500,000+ |
-| CHARTEVENTS | 758K rows | ~330M rows |
-| Training time | ~10 min | ~2-8 hours (GPU) |
-| RAM needed | ~2 GB | ~16-32 GB (with chunking) |
 
 ---
 
@@ -342,7 +364,7 @@ Subsequent runs skip feature extraction entirely and load from cache.
 |----------|--------|-------------|
 | `/api/stats` | GET | Dataset statistics (total stays, mean age, mortality rate, care unit distribution) |
 | `/api/patients` | GET | Paginated patient list with search, risk filtering |
-| `/api/patients/{id}/predictions` | GET | All 17 prediction scores for an existing patient |
+| `/api/patients/{id}/predictions` | GET | All prediction scores for an existing patient |
 | `/api/patients/{id}/vitals` | GET | Time-series vital signs for charting |
 | `/api/patients/{id}/labs` | GET | Time-series lab values for charting |
 | `/api/alerts` | GET | All HIGH/MEDIUM risk patients with triggered labels |
@@ -372,7 +394,7 @@ Subsequent runs skip feature extraction entirely and load from cache.
 | Page | Purpose |
 |------|---------|
 | **Overview** | KPI cards (total stays, age, LOS, mortality) + risk distribution + care units + critical alerts |
-| **Patient Detail** | Click patient → vitals charts, lab trends, all 17 prediction scores, SHAP features |
+| **Patient Detail** | Click patient → vitals charts, lab trends, prediction scores, SHAP features |
 | **Alerts** | All high-risk patients sorted by composite score, with triggered labels |
 | **New Assessment** | Input form for new patient → real-time risk prediction |
 | **Validation** | Model performance metrics and training reports |
@@ -395,24 +417,24 @@ Patients are classified as **HIGH** (>0.6), **MEDIUM** (>0.3), or **LOW** risk.
 
 ```
 SEM-4-PROJECT/
-├── data/                          # MIMIC-III CSV files (33+ GB)
+├── data/                          # MIMIC-III CSV files (~43 GB)
 ├── config.yaml                    # All thresholds, model params, GPU config
 ├── data_loader.py                 # Loads + merges 14 CSV files
 ├── feature_engineering.py         # Extracts vitals/labs, creates sequences
 ├── training.py                    # GPU training loop, AMP, grad accumulation
-├── models.py                      # LSTM, Transformer, XGBoost architectures
+├── models.py                      # LSTM, Transformer, XGBoost, LightGBM, TabTransformer, TFT
 ├── main_pipeline.py               # Orchestrates everything end-to-end
 ├── rebuild_ensembles.py           # Rebuild ensemble pickles from checkpoints
 ├── show_predictions.py            # CLI display of training results
 │
 ├── predictors/                    # One file per prediction task
-│   ├── base_predictor.py          # MODELS_TO_TRY = ['lstm','transformer','xgboost']
+│   ├── base_predictor.py          # MODELS_TO_TRY = ['lstm','transformer','xgboost','lightgbm']
 │   ├── mortality_predictor.py     # 6/12/24h mortality
 │   ├── sepsis_predictor.py        # SIRS + infection detection
-│   ├── aki_predictor.py           # KDIGO staging
+│   ├── aki_predictor.py           # KDIGO staging (stages 1-3, 24/48h)
 │   ├── vasopressor_predictor.py   # Drug requirement detection
 │   ├── ventilation_predictor.py   # 3-layer vent detection
-│   └── los_predictor.py           # Short/long stay
+│   └── los_predictor.py           # Short/long stay classification
 │
 ├── templates/                     # Jinja2 HTML templates
 │   ├── base.html                  # Base layout with theme toggle
@@ -422,8 +444,8 @@ SEM-4-PROJECT/
 │   └── validation.html            # Model validation results
 │
 ├── app.py                         # FastAPI backend
-├── smart_icu_dashboard.html       # Standalone React dashboard
-├── models/                        # Saved model checkpoints (.pth, .pkl)
+├── smart_icu_dashboard.html       # Standalone dashboard
+├── models/                        # Saved model checkpoints (.pth, .pkl) — 36 files
 └── output/                        # Training reports, feature cache, SHAP plots
 ```
 
@@ -452,38 +474,32 @@ All dates are shifted to 2100-2200 range for patient privacy:
 - **Pre-allocate instead of list→array**: Avoided the 2× memory spike during conversion
 - **Feature caching**: Added `_vital_itemid_cache` and `_lab_itemid_cache` so itemid-to-name mapping runs once instead of 492,000 times
 - **Rolling trend optimization**: `calc_trend_fast` uses `raw=True` (numpy/Cython path) instead of `raw=False` (interpreted) — 2-4× faster per stay
+- **StandardScaler normalization**: Added input normalization before caching — fixes NaN loss in DL models caused by raw feature scale differences (HR≈80, WBC≈10000)
 
 ### Training Bug Fixes
 
 - **BCELoss → BCEWithLogitsLoss**: BCELoss is unsafe under AMP. Models output raw logits; `BCEWithLogitsLoss` fuses sigmoid + loss internally and is numerically stable under FP16
-- **Label indices bug**: `set_label_indices()` was called **after** `train_all_models()` instead of before — root cause of AUROC = 0 for all DL models (they received all 19 labels instead of task-specific columns)
+- **Label indices bug**: `set_label_indices()` was called **after** `train_all_models()` instead of before — root cause of AUROC = 0 for all DL models (they received all labels instead of task-specific columns)
 - **NaN loss handling**: Added `not np.isnan(val_loss)` check for checkpointing; NaN epochs are skipped without incrementing patience counter
 - **best_model.pth conflicts**: All models saved to same path → crash when checkpoint missing. Fixed with unique temp paths (`models/_best_<uuid>.pth`)
 - **"Mean of empty slice" warnings**: All mortality labels in validation batch were 0 → AUROC = NaN. Now filters NaN values before averaging
 - **Gradient clipping**: Added `clip_grad_norm_(max_norm=1.0)` to prevent exploding gradients producing inf/NaN loss
 - **Early stopping tuning**: Patience raised 10 → 20, `min_delta=1e-4` added
+- **Ensemble macro metrics bug**: AUPRC/F1/Sensitivity were 0.0000 — fixed by computing per-task metrics then averaging
+
+### Model Changes
+
+- **TCN removed**: `nn.BatchNorm1d` in TCNBlock collapses under FP16 AMP when mini-batches contain all-zero labels (common with rare ICU events). Running mean/variance → 0, normalization divides near-zero by near-zero, producing NaN loss from epoch 2-7 on every task
+- **LightGBM added**: Leaf-wise growth provides different perspective from XGBoost's level-wise approach, adding model diversity to the ensemble
+- **Ensemble methods added**: AUROC²-weighted averaging + stacking meta-learner with LogisticRegression
+- **Per-task threshold tuning**: Optimizes F1 on validation set instead of hardcoded 0.5
+- **Hypotension predictor removed**: Overlaps with vasopressor prediction; MAP threshold already captured in clinical rules
+- **Readmission predictor removed**: Relies on static/summary features with minimal sequential dependency; not suitable for the time-series pipeline
 
 ### Windows Compatibility
 
 - **DataLoader `num_workers`**: `num_workers=2` crashes on Windows without `if __name__ == '__main__'` guard. Added `_safe_num_workers()` forcing `num_workers=0` on Windows
 - **`torch.compile` suppressed**: Triton not supported on Windows
-
-### A100 GPU Optimizations (for server deployment)
-
-- BF16 replaces FP16 (A100 has dedicated BF16 tensor cores, no GradScaler needed)
-- Batch size 32 → 2048 (~60× fewer kernel launches per epoch)
-- `torch.compile(mode='reduce-overhead')` for CUDA graph fusion (20-40% speedup)
-- DataLoader workers 2 → 16 with `prefetch_factor=4` and `persistent_workers=True`
-- Fused AdamW (`fused=True, foreach=True`)
-- LSTM hidden 128 → 256, layers 2 → 3, Transformer d_model 128 → 256
-- Expected speedup: ~10-20× (mortality/LSTM from ~60 min/epoch to ~3-6 min/epoch)
-
-### RTX 3050 GPU Optimizations (for local development)
-
-- Batch size 32 → 128 (uses ~1.8 GB of 4 GB VRAM at FP16, was using only 5%)
-- Gradient accumulation steps 2 → 1 (no longer needed at batch=128)
-- `prefetch_factor=2` + `persistent_workers=True` on Linux/macOS
-- `weights_only=True` on `torch.load` calls (removes PyTorch 2.x FutureWarning)
 
 ---
 
