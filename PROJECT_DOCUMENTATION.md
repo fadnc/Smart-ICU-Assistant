@@ -256,11 +256,7 @@ Input [n_samples, 24, features] → flatten → [n_samples, 24 × features]
   → 17 independent XGBClassifier models
   → max_depth=8, 300 trees, early stopping (20 rounds)
   → tree_method='hist', device='cuda'
-```
 
-### Why TCN Was Removed
-
-TCN (`TCNBlock`) used `nn.BatchNorm1d`. Under FP16 AMP with severely imbalanced labels (vasopressor < 8%, AKI Stage 3 < 3%), entire mini-batches frequently contain all-zero labels. BatchNorm's running mean/variance collapses toward zero → divides near-zero by near-zero → NaN from epoch 2-7 onward. TCN wasted ~3 hours per task with AUROC stuck at 0.0000. The fix would be replacing `nn.BatchNorm1d` with `nn.GroupNorm(1, out_channels)`, but LSTM + XGBoost already achieve strong results (mortality LSTM 0.82, XGBoost 0.87; sepsis LSTM 0.87).
 
 ### Best Model Selection
 
@@ -471,22 +467,6 @@ All dates are shifted to 2100-2200 range for patient privacy:
 
 - **DataLoader `num_workers`**: `num_workers=2` crashes on Windows without `if __name__ == '__main__'` guard. Added `_safe_num_workers()` forcing `num_workers=0` on Windows
 - **`torch.compile` suppressed**: Triton not supported on Windows
-
-### XGBoost 2.x Migration
-
-- `tree_method='gpu_hist'` + `gpu_id=0` → `tree_method='hist'` + `device='cuda'`
-- `use_label_encoder=False` removed (parameter no longer exists in XGBoost 2.x)
-
-### TCN Removal
-
-**Files changed**: `models.py`, `base_predictor.py`, `config.yaml`, `show_predictions.py`
-
-- `TCNBlock` and `TCNModel` classes deleted (~80 lines)
-- `MODELS_TO_TRY` changed from `['lstm', 'tcn', 'transformer', 'xgboost']` to `['lstm', 'transformer', 'xgboost']`
-- `create_model` factory raises `ValueError` if `'tcn'` is passed
-- `TCN_CONFIG` block removed from `config.yaml`
-
-**Root cause**: `nn.BatchNorm1d` + FP16 AMP + imbalanced labels → NaN from epoch 2-7. Fix would be `nn.GroupNorm(1, out_channels)` but LSTM + XGBoost already match/exceed TCN performance.
 
 ### A100 GPU Optimizations (for server deployment)
 
