@@ -85,10 +85,20 @@ class FeatureEngineer:
         # FIX: use cached mapping instead of recomputing per stay
         vital_mapping = self.get_vital_mapping(d_items)
 
+        # Fahrenheit temperature itemids — must convert to °C
+        TEMP_FAHRENHEIT_ITEMIDS = {223761, 678}
+
         vitals_list = []
         for vital_name, itemids in vital_mapping.items():
             vital_data = stay_charts[stay_charts['itemid'].isin(itemids)].copy()
             if len(vital_data) > 0:
+                # Convert Fahrenheit → Celsius for temperature
+                if vital_name == 'tempc':
+                    f_mask = vital_data['itemid'].isin(TEMP_FAHRENHEIT_ITEMIDS)
+                    if f_mask.any():
+                        vital_data.loc[f_mask, 'valuenum'] = (
+                            vital_data.loc[f_mask, 'valuenum'] - 32
+                        ) * 5 / 9
                 vital_data['vital_name'] = vital_name
                 vitals_list.append(vital_data[['charttime', 'vital_name', 'valuenum']])
 
