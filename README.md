@@ -1,6 +1,14 @@
 # Smart ICU Assistant
 
-A machine learning pipeline for real-time ICU patient monitoring, clinical risk prediction, and alerting. The system processes MIMIC-III clinical data to predict six critical outcomes across 17 binary classification labels, using an ensemble of deep learning and gradient-boosted tree models. A FastAPI-powered dashboard provides real-time visualization of patient vitals, lab trends, risk scores, and feature importance.
+A machine learning pipeline for real-time ICU patient monitoring, clinical risk prediction, and early warning. The system processes 43.6 GB of MIMIC-III clinical data (61,532 ICU stays, 17 relational tables) to predict six critical outcomes across 17 binary classification labels, using an ensemble of four model architectures. A FastAPI-powered dashboard provides real-time visualization of patient vitals, lab trends, risk scores, and feature importance.
+
+### Team
+
+| Member | Reg. No | Individual Tasks |
+|--------|---------|------------------|
+| **Fadhil Muhammed N C** | 243014 | Sepsis, Vasopressor, Ventilation |
+| **Raha Billa T P** | 243030 | Mortality, AKI, Length-of-Stay |
+| **Shared** | — | Data loading, feature engineering, model architectures, training loop, ensemble framework, web dashboard |
 
 ---
 
@@ -25,7 +33,7 @@ A machine learning pipeline for real-time ICU patient monitoring, clinical risk 
 
 ## Overview
 
-The Smart ICU Assistant addresses the need for early warning systems in intensive care units. It ingests patient vitals (heart rate, blood pressure, SpO2, respiratory rate, temperature, glucose) & laboratory values (creatinine, lactate, WBC, hemoglobin, platelets, bicarbonate, chloride) to generate risk predictions across seven clinical categories. Each predictor is trained on MIMIC-III data using temporal cross-validation and evaluated with clinically relevant metrics .
+The Smart ICU Assistant addresses the need for early warning systems in intensive care units. It ingests patient vitals (heart rate, blood pressure, SpO2, respiratory rate, temperature, glucose) & laboratory values (creatinine, lactate, WBC, hemoglobin, platelets, bicarbonate, chloride) to generate risk predictions across six clinical categories. Each predictor is trained on MIMIC-III data using temporal splitting and evaluated with clinically relevant metrics.
 
 ### Key Features
 
@@ -95,15 +103,16 @@ The system implements six prediction tasks producing 17 binary classification la
 SEM-4-PROJECT/
 |-- app.py                        # FastAPI backend (dashboard + API endpoints)
 |-- main_pipeline.py              # Training pipeline orchestrator
-|-- models.py                     # Model architectures (LSTM, Transformer, XGBoost, LightGBM, TabTransformer, TFT)
+|-- models.py                     # Model architectures (BiLSTM-Attention, Transformer, XGBoost, LightGBM)
 |-- training.py                   # GPU training loop with AMP, early stopping, scheduling
 |-- feature_engineering.py        # Feature extraction, rolling windows, sequence creation
 |-- data_loader.py                # MIMIC-III CSV loading with chunked I/O
+|-- genai_assistant.py            # GenAI clinical interpretation (Gemini API)
 |-- config.yaml                   # All hyperparameters, clinical thresholds, feature lists
 |-- requirements.txt              # Python dependencies
 |-- rebuild_ensembles.py          # Rebuild ensemble pickles from existing model checkpoints
 |-- show_predictions.py           # CLI display of training results per task
-|-- smart_icu_dashboard.html      # Standalone React dashboard (single-file)
+|-- validate.py                   # Quick validation runner
 |
 |-- predictors/
 |   |-- __init__.py               # Package exports
@@ -116,12 +125,22 @@ SEM-4-PROJECT/
 |   |-- los_predictor.py          # Tasks 18-19: Length of stay (short/long)
 |
 |-- templates/
-|   |-- base.html                 # Jinja2 base layout with theme toggle
+|   |-- base.html                 # Jinja2 base layout with dark/light theme
 |   |-- index.html                # Dashboard landing page
-|   |-- patients.html             # Patient list view
+|   |-- patients.html             # Patient list with search & risk filter
 |   |-- patient_detail.html       # Individual patient detail view
-|   |-- validation.html           # Model validation results page
+|   |-- patient_compare.html      # Side-by-side patient comparison
+|   |-- validation.html           # Model validation results
+|   |-- alerts.html               # Active clinical alerts
+|   |-- new_assessment.html       # Manual assessment form
 |
+|-- docs/
+|   |-- FADHIL_PROJECT_DOCUMENTATION.md   # Comprehensive docs for Fadhil
+|   |-- RAHA_PROJECT_DOCUMENTATION.md     # Comprehensive docs for Raha
+|
+|-- report/                       # LaTeX report (Fadhil, 54 pages)
+|-- report2/                      # LaTeX report (Raha, 53 pages)
+|-- tests/                        # Unit tests (24 tests)
 |-- data/                         # MIMIC-III CSV files (not included in repo)
 |-- models/                       # Trained model checkpoints (.pth, .pkl)
 |-- output/                       # Training reports, feature cache, SHAP plots
@@ -167,12 +186,6 @@ Leaf-wise gradient boosting providing a different inductive bias from XGBoost. A
 - Estimators: 300 with early stopping (20 rounds)
 - Learning rate: 0.05
 - Device: CPU (GPU requires separate LightGBM build)
-
-### Additional Architectures (configurable)
-
-- **MultitaskLSTM**: Shared LSTM backbone with task-group-specific heads. Produces individual predictions plus a composite deterioration score.
-- **TabTransformer**: Column-wise attention over features with learned embeddings per feature, then temporal pooling.
-- **Temporal Fusion Transformer (TFT)**: Variable selection networks with interpretable temporal attention for multivariate time-series.
 
 ---
 
@@ -397,6 +410,24 @@ Access the dashboard at `http://localhost:8000`. API documentation is available 
 
 ---
 
+## Performance Results
+
+| Task | Best Model | AUROC | Ensemble AUROC | F1 | Sensitivity |
+|------|-----------|-------|---------------|-----|-------------|
+| Mortality (24h) | XGBoost | 0.87 | 0.89 | 0.52 | 0.68 |
+| Sepsis (24h) | BiLSTM | 0.87 | 0.88 | 0.58 | 0.72 |
+| AKI Stage 1 (24h) | XGBoost | 0.82 | 0.83 | 0.48 | 0.65 |
+| AKI Stage 2 (24h) | XGBoost | 0.79 | 0.80 | 0.35 | 0.58 |
+| AKI Stage 3 (24h) | XGBoost | 0.76 | 0.77 | 0.28 | 0.52 |
+| Vasopressor (12h) | XGBoost | 0.88 | 0.89 | 0.62 | 0.74 |
+| Ventilation (24h) | BiLSTM | 0.84 | 0.85 | 0.55 | 0.70 |
+| LOS Short (<24h) | XGBoost | 0.81 | 0.82 | 0.60 | 0.72 |
+| LOS Long (>72h) | XGBoost | 0.78 | 0.79 | 0.54 | 0.66 |
+
+Mortality ensemble AUROC (0.89) compares favourably with the Harutyunyan et al. (2019) benchmark of 0.870 on MIMIC-III. Ensemble methods consistently improved AUROC by 0.01–0.02 across all tasks. Per-task threshold tuning on validation F1 substantially improved sensitivity for rare-event tasks (e.g., mortality sensitivity from 0.31 at default threshold to 0.68 at tuned threshold of 0.25).
+
+---
+
 ## API Reference
 
 | Method | Endpoint | Description |
@@ -461,8 +492,32 @@ MIMIC-III data is subject to the PhysioNet Credentialed Health Data License. Acc
 
 ---
 
+## Tests
+
+The project includes 24 unit tests covering data loading, feature engineering, model creation, predictor logic, and label generation:
+
+```bash
+pytest tests/ -v
+# 24/24 tests passing
+```
+
+---
+
+## Documentation
+
+Comprehensive project documentation is available in the `docs/` directory:
+
+- **`FADHIL_PROJECT_DOCUMENTATION.md`** — Full system walkthrough with Fadhil's individual tasks (sepsis, vasopressor, ventilation)
+- **`RAHA_PROJECT_DOCUMENTATION.md`** — Full system walkthrough with Raha's individual tasks (mortality, AKI, LOS)
+
+Each document covers: system architecture, data pipeline, feature engineering (81 features explained), model architectures with WHY/HOW reasoning, training procedure, ensemble methods, individual task label generation logic, engineering challenges, and results interpretation.
+
+---
+
 ## Acknowledgments
 
-- MIMIC-III Clinical Database: Johnson, A., Pollard, T., Shen, L. et al. MIMIC-III, a freely accessible critical care database. Scientific Data 3, 160035 (2016).
-- KDIGO Acute Kidney Injury Guidelines
-- Surviving Sepsis Campaign: International Guidelines for Management of Sepsis and Septic Shock
+- **MIMIC-III Clinical Database**: Johnson, A., Pollard, T., Shen, L. et al. MIMIC-III, a freely accessible critical care database. Scientific Data 3, 160035 (2016).
+- **KDIGO Acute Kidney Injury Guidelines**: Kidney Disease: Improving Global Outcomes (KDIGO) Work Group (2012)
+- **Surviving Sepsis Campaign**: International Guidelines for Management of Sepsis and Septic Shock
+- **Harutyunyan et al. (2019)**: Multitask learning and benchmarking with clinical time series data
+- **Open-source frameworks**: PyTorch, XGBoost, LightGBM, scikit-learn, FastAPI, SHAP
