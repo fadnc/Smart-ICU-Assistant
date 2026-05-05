@@ -19,7 +19,7 @@ class LOSPredictor(BasePredictor):
     Unlike other predictors (binary classification), this predicts a
     continuous value: remaining hours in ICU from current_time.
 
-    Logic:
+    Logic: (-- to be implemented...)
         remaining_los = (outtime - current_time) in hours
         Bucketed into categories for classification:
             - Short stay:  < 24h → label = 0
@@ -30,7 +30,6 @@ class LOSPredictor(BasePredictor):
         los_short_24h:  1 if remaining < 24h
         los_long_72h:   1 if remaining > 72h
 
-    Best model: XGBoost or LSTM
     """
 
     TASK_NAME = "los"

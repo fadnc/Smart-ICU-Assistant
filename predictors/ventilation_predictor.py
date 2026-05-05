@@ -20,7 +20,6 @@ class VentilationPredictor(BasePredictor):
         2. PROCEDUREEVENTS_MV — same itemids in procedure table
         3. PROCEDURES_ICD — ICD-9 codes (9670-9672, 9604, 9390)
 
-    Best model: LSTM or MultitaskLSTM (sequential respiratory patterns)
     """
 
     TASK_NAME = "ventilation"

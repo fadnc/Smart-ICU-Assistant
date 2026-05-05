@@ -26,8 +26,6 @@ class AKIPredictor(BasePredictor):
         Stage 3: future_cr >= 3.0× baseline  OR  future_cr > 4.0 mg/dL
 
     Stages are cumulative: Stage 3 → Stage 2 = 1, Stage 1 = 1
-
-    Best model: XGBoost or LSTM (handles creatinine kinetics well)
     """
 
     TASK_NAME = "aki"

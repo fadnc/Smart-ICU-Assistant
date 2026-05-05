@@ -29,7 +29,6 @@ class SepsisPredictor(BasePredictor):
         A. Antibiotic prescription started in the window
         B. ICD-9 sepsis diagnosis (038, 995.91, 995.92, 785.52)
 
-    Best model: Transformer (cross-feature attention for subtle interactions)
     """
 
     TASK_NAME = "sepsis"

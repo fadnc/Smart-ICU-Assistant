@@ -3,7 +3,7 @@ Base Predictor — Shared logic for all ICU prediction tasks.
 
 CHANGES:
   - MODELS_TO_TRY: ['lstm', 'transformer', 'xgboost', 'lightgbm']
-    TCN removed (BatchNorm1d NaN under AMP). LightGBM added for diversity.
+    LightGBM added for diversity.
   - Ensemble: AUROC²-weighted averaging + stacking meta-learner.
   - Per-task threshold tuning: optimizes F1 on val set instead of hardcoded 0.5.
   - XGBoost/LightGBM: per-task scale_pos_weight + early stopping with val set.
@@ -458,7 +458,7 @@ class BasePredictor(ABC):
         return self._train_dl_model(model_name, X, y, timestamps, config)
 
     def _train_dl_model(self, model_name: str, X, y, timestamps, config) -> Dict:
-        """Train LSTM / Transformer / TabTransformer / TFT with epoch-level progress bar."""
+        """Train LSTM / Transformer with epoch-level progress bar."""
         model   = create_model(model_name, config)
         trainer = ModelTrainer(model, config, model_type=model_name)
 

@@ -25,7 +25,6 @@ class VasopressorPredictor(BasePredictor):
         Check PRESCRIPTIONS for vasopressor drug names started in the window.
         Also check INPUTEVENTS_MV for IV vasopressor itemids.
 
-    Best model: XGBoost (handles class imbalance best)
     """
 
     TASK_NAME = "vasopressor"

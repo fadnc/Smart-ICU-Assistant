@@ -20,8 +20,7 @@ class MortalityPredictor(BasePredictor):
             time_to_death = (dod - current_time) in hours
             IF 0 <= time_to_death <= window → label = 1
         ELSE → label = 0
-
-    Best model: LSTM (long temporal dependency for multi-organ deterioration)
+        
     """
 
     TASK_NAME = "mortality"
