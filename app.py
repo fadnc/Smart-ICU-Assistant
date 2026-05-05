@@ -1477,23 +1477,23 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Dict
 
 class VitalsInput(BaseModel):
-    heartrate:  float = Field(80, description="Heart rate (bpm)")
-    sysbp:      float = Field(120, description="Systolic BP (mmHg)")
-    diasbp:     float = Field(80, description="Diastolic BP (mmHg)")
-    meanbp:     float = Field(90, description="Mean arterial pressure (mmHg)")
-    resprate:   float = Field(16, description="Respiratory rate (breaths/min)")
-    tempc:      float = Field(37.0, description="Temperature (°C)")
-    spo2:       float = Field(98, description="Oxygen saturation (%)")
-    glucose:    float = Field(100, description="Blood glucose (mg/dL)")
+    heartrate:  float = Field(80, ge=20, le=300, description="Heart rate (bpm)")
+    sysbp:      float = Field(120, ge=30, le=300, description="Systolic BP (mmHg)")
+    diasbp:     float = Field(80, ge=10, le=200, description="Diastolic BP (mmHg)")
+    meanbp:     float = Field(90, ge=20, le=250, description="Mean arterial pressure (mmHg)")
+    resprate:   float = Field(16, ge=2, le=60, description="Respiratory rate (breaths/min)")
+    tempc:      float = Field(37.0, ge=25, le=45, description="Temperature (°C)")
+    spo2:       float = Field(98, ge=40, le=100, description="Oxygen saturation (%)")
+    glucose:    float = Field(100, ge=10, le=1500, description="Blood glucose (mg/dL)")
 
 class LabsInput(BaseModel):
-    creatinine:  float = Field(1.0, description="Creatinine (mg/dL)")
-    lactate:     float = Field(1.0, description="Lactate (mmol/L)")
-    wbc:         float = Field(8000, description="White blood cell count (/µL)")
-    hemoglobin:  float = Field(13.0, description="Hemoglobin (g/dL)")
-    platelets:   float = Field(250, description="Platelet count (×10³/µL)")
-    bicarbonate: float = Field(24, description="Bicarbonate (mEq/L)")
-    chloride:    float = Field(102, description="Chloride (mEq/L)")
+    creatinine:  float = Field(1.0, ge=0.1, le=30, description="Creatinine (mg/dL)")
+    lactate:     float = Field(1.0, ge=0.1, le=30, description="Lactate (mmol/L)")
+    wbc:         float = Field(8000, ge=100, le=200000, description="White blood cell count (/µL)")
+    hemoglobin:  float = Field(13.0, ge=1, le=25, description="Hemoglobin (g/dL)")
+    platelets:   float = Field(250, ge=1, le=1500, description="Platelet count (×10³/µL)")
+    bicarbonate: float = Field(24, ge=1, le=60, description="Bicarbonate (mEq/L)")
+    chloride:    float = Field(102, ge=50, le=150, description="Chloride (mEq/L)")
 
 class MedicationsInput(BaseModel):
     vasopressors:            bool = Field(False, description="Currently on vasopressors")
@@ -1502,9 +1502,9 @@ class MedicationsInput(BaseModel):
     sedation:                bool = Field(False, description="Currently sedated")
 
 class DemographicsInput(BaseModel):
-    age:       int   = Field(60, description="Patient age (years)")
+    age:       int   = Field(60, ge=0, le=130, description="Patient age (years)")
     gender:    str   = Field("M", description="M or F")
-    weight_kg: float = Field(75, description="Weight in kg")
+    weight_kg: float = Field(75, ge=1, le=500, description="Weight in kg")
 
 class HistoryInput(BaseModel):
     hours_in_icu:          float       = Field(6, description="Hours since ICU admission")
