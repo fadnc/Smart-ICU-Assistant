@@ -422,7 +422,7 @@ SEM-4-PROJECT/
 ├── data_loader.py                 # Loads + merges 14 CSV files
 ├── feature_engineering.py         # Extracts vitals/labs, creates sequences
 ├── training.py                    # GPU training loop, AMP, grad accumulation
-├── models.py                      # LSTM, Transformer, XGBoost, LightGBM, TabTransformer, TFT
+├── models.py                      # LSTM, Transformer, XGBoost, LightGBM
 ├── main_pipeline.py               # Orchestrates everything end-to-end
 ├── rebuild_ensembles.py           # Rebuild ensemble pickles from checkpoints
 ├── show_predictions.py            # CLI display of training results
