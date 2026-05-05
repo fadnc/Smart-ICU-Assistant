@@ -1,12 +1,7 @@
 """
 Smart ICU Assistant — FastAPI Backend
 =====================================================================
-Drop-in replacement for icu_api.py (Flask) with:
-  ✓ Auto-generated OpenAPI docs at /docs
-  ✓ Pydantic response models
-  ✓ Serves dashboard at /  (no separate web server needed)
-  ✓ CORS enabled for local development
-  ✓ Same data loading, prediction, and SHAP logic
+
 
 Run:
     uvicorn app:app --host 0.0.0.0 --port 8000 --reload
@@ -121,6 +116,76 @@ TASK_GROUPS = {
     "Ventilation":    ["ventilation_6h", "ventilation_12h", "ventilation_24h"],
     "Length of Stay": ["los_short_24h",  "los_long_72h"],
 }
+
+# ── Care Unit Clinical Profiles ──────────────────────────────────────────────
+CARE_UNIT_PROFILES = {
+    "MICU": {
+        "name": "Medical ICU",
+        "description": "Critically ill medical patients — sepsis, respiratory failure, organ dysfunction",
+        "key_risks": ["Sepsis", "Mortality", "Ventilation"],
+        "composite_weights": {"mortality": 0.30, "sepsis": 0.30, "aki": 0.15, "vasopressor": 0.10, "ventilation": 0.15},
+        "typical_conditions": ["Pneumonia", "Sepsis", "COPD Exacerbation", "GI Bleeding", "DKA"],
+        "monitoring_freq": "Continuous",
+        "nurse_ratio": "1:1 or 1:2",
+    },
+    "SICU": {
+        "name": "Surgical ICU",
+        "description": "Post-operative and surgical emergency patients — trauma, bleeding, wound complications",
+        "key_risks": ["Vasopressor", "AKI", "Ventilation"],
+        "composite_weights": {"mortality": 0.25, "sepsis": 0.20, "aki": 0.20, "vasopressor": 0.20, "ventilation": 0.15},
+        "typical_conditions": ["Post-operative", "Trauma", "Hemorrhage", "Surgical Sepsis", "Bowel Obstruction"],
+        "monitoring_freq": "Continuous",
+        "nurse_ratio": "1:1 or 1:2",
+    },
+    "CCU": {
+        "name": "Cardiac Care Unit",
+        "description": "Acute cardiac conditions — MI, heart failure, arrhythmias, cardiogenic shock",
+        "key_risks": ["Mortality", "Vasopressor"],
+        "composite_weights": {"mortality": 0.35, "sepsis": 0.15, "aki": 0.15, "vasopressor": 0.25, "ventilation": 0.10},
+        "typical_conditions": ["STEMI/NSTEMI", "Heart Failure", "Arrhythmia", "Cardiogenic Shock", "Cardiac Arrest"],
+        "monitoring_freq": "Continuous with telemetry",
+        "nurse_ratio": "1:1 or 1:2",
+    },
+    "CSRU": {
+        "name": "Cardiac Surgery Recovery",
+        "description": "Post-cardiac surgery recovery — CABG, valve replacement, aortic repair",
+        "key_risks": ["AKI", "Ventilation", "Length of Stay"],
+        "composite_weights": {"mortality": 0.25, "sepsis": 0.15, "aki": 0.25, "vasopressor": 0.15, "ventilation": 0.20},
+        "typical_conditions": ["Post-CABG", "Valve Replacement", "Aortic Surgery", "Post-Transplant"],
+        "monitoring_freq": "Continuous",
+        "nurse_ratio": "1:1",
+    },
+    "TSICU": {
+        "name": "Trauma/Surgical ICU",
+        "description": "Major trauma and complex surgical patients — TBI, burns, polytrauma",
+        "key_risks": ["Vasopressor", "Ventilation", "Sepsis"],
+        "composite_weights": {"mortality": 0.25, "sepsis": 0.25, "aki": 0.15, "vasopressor": 0.20, "ventilation": 0.15},
+        "typical_conditions": ["Traumatic Brain Injury", "Polytrauma", "Burns", "Spinal Injury", "Blast Injury"],
+        "monitoring_freq": "Continuous with ICP if needed",
+        "nurse_ratio": "1:1",
+    },
+    "WARD": {
+        "name": "Normal Ward",
+        "description": "General medical/surgical ward — stable patients, lower acuity, step-down care",
+        "key_risks": ["Mortality", "Sepsis"],
+        "composite_weights": {"mortality": 0.35, "sepsis": 0.35, "aki": 0.15, "vasopressor": 0.05, "ventilation": 0.10},
+        "typical_conditions": ["Stable post-op", "Pneumonia", "UTI", "Cellulitis", "Chronic disease management"],
+        "monitoring_freq": "Every 4-6 hours",
+        "nurse_ratio": "1:4 to 1:6",
+        "icu_transfer_threshold": 0.45,
+    },
+}
+
+def _get_unit_profile(unit: str) -> dict:
+    """Get care unit profile, with fallback to MICU for unknown units."""
+    key = unit.upper().strip()
+    if key in CARE_UNIT_PROFILES:
+        return CARE_UNIT_PROFILES[key]
+    # Map common MIMIC-III variations
+    for k in CARE_UNIT_PROFILES:
+        if k in key or key in k:
+            return CARE_UNIT_PROFILES[k]
+    return CARE_UNIT_PROFILES.get("MICU", {})
 
 # Vital sign MIMIC-III itemids (MetaVision + CareVue)
 VITAL_ITEMIDS = {
@@ -308,12 +373,21 @@ def _real_vitals(icustay_id: int) -> list:
     if stay_charts is None or len(stay_charts) == 0:
         return _fallback_vitals(icustay_id)
 
+    # Fahrenheit temperature itemids — must convert to °C before aggregation
+    TEMP_FAHRENHEIT_ITEMIDS = {223761, 678}
+
     records = []
     for vital_name, itemids in VITAL_ITEMIDS.items():
-        sub = stay_charts[stay_charts["itemid"].isin(itemids)][["charttime", "valuenum"]].copy()
+        sub = stay_charts[stay_charts["itemid"].isin(itemids)][["itemid", "charttime", "valuenum"]].copy()
         sub = sub.dropna(subset=["valuenum"])
+
+        # Convert Fahrenheit → Celsius for temperature
+        if vital_name == "tempc":
+            f_mask = sub["itemid"].isin(TEMP_FAHRENHEIT_ITEMIDS)
+            sub.loc[f_mask, "valuenum"] = (sub.loc[f_mask, "valuenum"] - 32) * 5 / 9
+
         sub["vital"] = vital_name
-        records.append(sub)
+        records.append(sub[["charttime", "valuenum", "vital"]])
 
     if not records:
         return _fallback_vitals(icustay_id)
@@ -1437,6 +1511,7 @@ class HistoryInput(BaseModel):
     prior_icu_admissions:  int         = Field(0, description="Prior ICU visits")
     diagnosis:             str         = Field("", description="Primary diagnosis")
     comorbidities:         List[str]   = Field([], description="e.g. diabetes, hypertension")
+    ward_type:             str         = Field("ICU", description="Ward type: MICU, SICU, CCU, CSRU, TSICU, WARD")
 
 class PatientInput(BaseModel):
     demographics: DemographicsInput = DemographicsInput()
@@ -1648,6 +1723,9 @@ async def predict_new_patient(patient: PatientInput):
     d = patient.demographics
     h = patient.history
 
+    ward_type = h.ward_type.upper().strip() if h.ward_type else "ICU"
+    unit_profile = _get_unit_profile(ward_type)
+
     rule_scores, clinical_info = _clinical_rule_scores(v, l, m, d, h)
     model_scores = _run_models_on_input(v, l)
 
@@ -1658,14 +1736,25 @@ async def predict_new_patient(patient: PatientInput):
         else:
             final_scores[lbl] = rule_scores.get(lbl, 0.0)
 
+    # Ward-specific risk scaling for normal ward patients
+    if ward_type == "WARD":
+        for lbl in PREDICTION_LABELS:
+            if lbl.startswith(("vasopressor_", "ventilation_")):
+                final_scores[lbl] = round(final_scores[lbl] * 0.5, 4)
+
     source = "trained_models" if model_scores else "clinical_rules"
 
+    # Ward-aware composite scoring using unit-specific weights
+    cw = unit_profile.get("composite_weights", {
+        "mortality": 0.30, "sepsis": 0.25, "aki": 0.15,
+        "vasopressor": 0.15, "ventilation": 0.15,
+    })
     composite = round(
-        final_scores.get("mortality_24h",  0) * 0.30 +
-        final_scores.get("sepsis_24h",     0) * 0.25 +
-        final_scores.get("aki_stage1_24h", 0) * 0.15 +
-        final_scores.get("vasopressor_12h",0) * 0.15 +
-        final_scores.get("ventilation_24h",0) * 0.15,
+        final_scores.get("mortality_24h",  0) * cw.get("mortality", 0.30) +
+        final_scores.get("sepsis_24h",     0) * cw.get("sepsis", 0.25) +
+        final_scores.get("aki_stage1_24h", 0) * cw.get("aki", 0.15) +
+        final_scores.get("vasopressor_12h",0) * cw.get("vasopressor", 0.15) +
+        final_scores.get("ventilation_24h",0) * cw.get("ventilation", 0.15),
         4,
     )
     risk = "HIGH" if composite > 0.6 else "MEDIUM" if composite > 0.3 else "LOW"
@@ -1725,6 +1814,34 @@ async def predict_new_patient(patient: PatientInput):
                        "message": f"Lactate {l.lactate} mmol/L — elevated, monitor perfusion",
                        "score": composite})
 
+    # Ward-specific: ICU transfer recommendation for normal ward patients
+    icu_transfer = None
+    if ward_type == "WARD":
+        transfer_threshold = unit_profile.get("icu_transfer_threshold", 0.45)
+        if composite > transfer_threshold:
+            icu_transfer = {
+                "recommended": True,
+                "urgency": "IMMEDIATE" if composite > 0.6 else "URGENT" if composite > 0.45 else "CONSIDER",
+                "reason": [],
+            }
+            if final_scores.get("mortality_24h", 0) > 0.4:
+                icu_transfer["reason"].append(f"Mortality risk {final_scores['mortality_24h']:.0%}")
+            if clinical_info["sirs"] >= 3:
+                icu_transfer["reason"].append(f"SIRS {clinical_info['sirs']}/4")
+            if v.meanbp < 65:
+                icu_transfer["reason"].append(f"MAP {v.meanbp:.0f} mmHg (hypotension)")
+            if v.spo2 < 92:
+                icu_transfer["reason"].append(f"SpO₂ {v.spo2}% (hypoxemia)")
+            if l.lactate > 2.0:
+                icu_transfer["reason"].append(f"Lactate {l.lactate} mmol/L")
+            if not icu_transfer["reason"]:
+                icu_transfer["reason"].append(f"Composite score {composite:.4f} exceeds threshold")
+            alerts.insert(0, {
+                "type": "critical", "category": "ICU Transfer",
+                "message": f"⚠️ ICU transfer {icu_transfer['urgency']}: " + "; ".join(icu_transfer["reason"]),
+                "score": composite,
+            })
+
     alerts.sort(key=lambda a: (0 if a["type"] == "critical" else 1, -a["score"]))
 
     ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -1737,6 +1854,15 @@ async def predict_new_patient(patient: PatientInput):
                            for g, ls in TASK_GROUPS.items()},
         "alerts":          alerts,
         "clinical_scores": clinical_info,
+        "ward_type":       ward_type,
+        "ward_profile":    {
+            "name": unit_profile.get("name", ward_type),
+            "description": unit_profile.get("description", ""),
+            "key_risks": unit_profile.get("key_risks", []),
+            "monitoring_freq": unit_profile.get("monitoring_freq", ""),
+            "nurse_ratio": unit_profile.get("nurse_ratio", ""),
+        },
+        "icu_transfer":    icu_transfer,
         "input_summary": {
             "age": d.age, "gender": d.gender,
             "hr": v.heartrate, "bp": f"{v.sysbp}/{v.diasbp}",
@@ -2067,6 +2193,90 @@ app.router.lifespan_context = lifespan
 @app.get("/api/boot_status", include_in_schema=False)
 async def boot_status():
     return dict(_boot_status)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Gen AI Clinical Interpretation Endpoints
+# ═════════════════════════════════════════════════════════════════════════════
+
+_ai_assistant = None
+
+def _get_ai_assistant():
+    """Lazy-initialize the clinical AI assistant."""
+    global _ai_assistant
+    if _ai_assistant is None:
+        from genai_assistant import ClinicalAssistant
+        _ai_assistant = ClinicalAssistant()
+    return _ai_assistant
+
+
+class AIInterpretRequest(BaseModel):
+    patient_data: dict = Field(..., description="Patient demographics, vitals, labs")
+    predictions:  dict = Field(..., description="Prediction results from /api/predict")
+    ward_type:    str  = Field("ICU", description="Ward type context")
+
+class AIHandoffRequest(BaseModel):
+    patient_data:   dict          = Field(..., description="Patient data")
+    predictions:    dict          = Field(..., description="Prediction results")
+    vitals_summary: Optional[dict] = Field(None, description="Optional vitals trend data")
+    ward_type:      str           = Field("ICU", description="Ward type context")
+
+
+@app.post("/api/ai/interpret")
+async def ai_interpret(req: AIInterpretRequest):
+    """Generate AI-powered clinical interpretation of risk predictions."""
+    try:
+        assistant = _get_ai_assistant()
+        result = assistant.interpret_predictions(
+            patient_data=req.patient_data,
+            predictions=req.predictions,
+            ward_type=req.ward_type,
+        )
+        return result
+    except Exception as e:
+        return {"error": str(e), "source": "error"}
+
+
+@app.post("/api/ai/handoff")
+async def ai_handoff(req: AIHandoffRequest):
+    """Generate an AI-powered SBAR shift handoff summary."""
+    try:
+        assistant = _get_ai_assistant()
+        result = assistant.generate_handoff(
+            patient_data=req.patient_data,
+            predictions=req.predictions,
+            vitals_summary=req.vitals_summary,
+            ward_type=req.ward_type,
+        )
+        return result
+    except Exception as e:
+        return {"error": str(e), "source": "error"}
+
+
+@app.get("/api/ai/status")
+async def ai_status():
+    """Check if Gen AI features are available."""
+    assistant = _get_ai_assistant()
+    return {
+        "available": assistant.is_available,
+        "provider": "gemini" if assistant.is_available else "template",
+        "info": "Set GEMINI_API_KEY environment variable to enable AI features" if not assistant.is_available else "Gemini AI active",
+    }
+
+
+@app.get("/api/ward_profiles")
+async def ward_profiles():
+    """Return all care unit clinical profiles."""
+    return {"profiles": CARE_UNIT_PROFILES}
+
+
+@app.get("/api/ward_profiles/{unit}")
+async def ward_profile(unit: str):
+    """Return clinical profile for a specific care unit."""
+    profile = _get_unit_profile(unit)
+    if not profile:
+        raise HTTPException(404, f"Unknown unit: {unit}")
+    return {"unit": unit.upper(), "profile": profile}
 
 
 # ═════════════════════════════════════════════════════════════════════════════
