@@ -141,6 +141,22 @@
               <label class="form-label" for="weight">Weight (kg)</label>
               <input class="form-input" type="number" id="weight" name="weight_kg" value="75" step="0.1" />
             </div>
+            <div class="form-group">
+              <label class="form-label" for="ward_type">Ward / Unit Type</label>
+              <select class="form-select" id="ward_type" name="ward_type">
+                <option value="MICU">MICU — Medical ICU</option>
+                <option value="SICU">SICU — Surgical ICU</option>
+                <option value="CCU">CCU — Cardiac Care Unit</option>
+                <option value="CSRU">CSRU — Cardiac Surgery Recovery</option>
+                <option value="TSICU">TSICU — Trauma/Surgical ICU</option>
+                <option value="WARD">Normal Ward (General)</option>
+              </select>
+            </div>
+          </div>
+          <div id="wardInfo" style="margin-top:10px; padding:10px 14px; background:var(--bg-card-2); border:1px solid var(--border); border-radius:var(--radius-sm); font-size:12px; color:var(--text-2); display:none;">
+            <div style="font-weight:600; color:var(--primary); margin-bottom:4px;" id="wardInfoName"></div>
+            <div id="wardInfoDesc"></div>
+            <div style="margin-top:6px; display:flex; gap:12px; flex-wrap:wrap;" id="wardInfoRisks"></div>
           </div>
         </div>
       </div>
@@ -312,6 +328,39 @@
         </div>
         <div class="card-body" id="taskPredictions"></div>
       </div>
+
+      <!-- ICU Transfer Recommendation (ward patients only) -->
+      <div class="card" id="icuTransferCard" style="display:none;">
+        <div class="card-head">
+          <span class="card-label"><span class="icon icon-sm" style="color:var(--danger);"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 13c1.66 0 3-1.34 3-3S8.66 7 7 7s-3 1.34-3 3 1.34 3 3 3zm12-6h-8v7H3V5H1v15h2v-3h18v3h2v-9c0-2.21-1.79-4-4-4z"/></svg></span> ICU Transfer Recommendation</span>
+        </div>
+        <div class="card-body" id="icuTransferBody"></div>
+      </div>
+
+      <!-- Ward Context -->
+      <div class="card" id="wardProfileCard" style="display:none;">
+        <div class="card-head">
+          <span class="card-label"><span class="icon icon-sm" style="color:var(--accent);"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg></span> Ward Context</span>
+          <span class="card-badge" id="wardBadge"></span>
+        </div>
+        <div class="card-body" id="wardProfileBody"></div>
+      </div>
+
+      <!-- AI Interpretation -->
+      <div class="card" id="aiCard" style="display:none;">
+        <div class="card-head">
+          <span class="card-label"><span class="icon icon-sm" style="color:#a855f7;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg></span> AI Clinical Interpretation</span>
+          <span class="card-badge" id="aiSource"></span>
+        </div>
+        <div class="card-body">
+          <button class="btn btn-primary" id="aiInterpretBtn" style="width:100%; margin-bottom:12px; justify-content:center;">
+            <span class="icon icon-sm"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg></span>
+            Generate AI Interpretation
+          </button>
+          <div id="aiResult" style="display:none;"></div>
+          <div id="aiDisclaimer" style="display:none; margin-top:12px; padding:10px 14px; background:var(--warning-bg); border:1px solid var(--warning-border); border-radius:var(--radius-sm); font-size:11px; color:var(--warning);"></div>
+        </div>
+      </div>
     </div>
 
     <!-- Empty state -->
@@ -392,7 +441,8 @@
         hours_in_icu: parseFloat(document.getElementById('hours_icu').value) || 6,
         prior_icu_admissions: parseInt(document.getElementById('prior_icu').value) || 0,
         diagnosis: document.getElementById('diagnosis').value || '',
-        comorbidities: []
+        comorbidities: [],
+        ward_type: document.getElementById('ward_type').value || 'MICU'
       }
     };
 
@@ -491,7 +541,102 @@
       taskHTML += '</div>';
     });
     document.getElementById('taskPredictions').innerHTML = taskHTML;
+
+    // Ward Profile Card
+    var wp = data.ward_profile;
+    if (wp && wp.name) {
+      document.getElementById('wardProfileCard').style.display = 'block';
+      document.getElementById('wardBadge').textContent = data.ward_type || '';
+      var wpHTML = '<div style="font-weight:600; color:var(--text-1); margin-bottom:6px;">' + wp.name + '</div>';
+      wpHTML += '<div style="font-size:12px; color:var(--text-2); margin-bottom:10px;">' + wp.description + '</div>';
+      wpHTML += '<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">';
+      (wp.key_risks || []).forEach(function(r) {
+        wpHTML += '<span style="font-size:10px; font-weight:600; padding:3px 10px; border-radius:100px; background:var(--primary-bg); color:var(--primary); border:1px solid var(--primary-border);">' + r + '</span>';
+      });
+      wpHTML += '</div>';
+      if (wp.monitoring_freq) wpHTML += '<div style="font-size:11px; color:var(--text-3);">Monitoring: ' + wp.monitoring_freq + ' | Nurse ratio: ' + (wp.nurse_ratio || '—') + '</div>';
+      document.getElementById('wardProfileBody').innerHTML = wpHTML;
+    }
+
+    // ICU Transfer Card (ward patients)
+    if (data.icu_transfer && data.icu_transfer.recommended) {
+      var tc = data.icu_transfer;
+      document.getElementById('icuTransferCard').style.display = 'block';
+      var urgColor = tc.urgency === 'IMMEDIATE' ? 'var(--danger)' : tc.urgency === 'URGENT' ? 'var(--warning)' : 'var(--primary)';
+      var tcHTML = '<div style="padding:16px; background:var(--danger-bg); border:2px solid var(--danger-border); border-radius:var(--radius-sm); margin-bottom:8px;">';
+      tcHTML += '<div style="font-size:16px; font-weight:800; color:' + urgColor + '; margin-bottom:8px;">⚠️ ' + tc.urgency + ' — ICU Transfer Recommended</div>';
+      tcHTML += '<ul style="margin:0; padding-left:20px; font-size:13px; color:var(--text-1);">';
+      (tc.reason || []).forEach(function(r) { tcHTML += '<li>' + r + '</li>'; });
+      tcHTML += '</ul></div>';
+      document.getElementById('icuTransferBody').innerHTML = tcHTML;
+    } else {
+      document.getElementById('icuTransferCard').style.display = 'none';
+    }
+
+    // Show AI card
+    document.getElementById('aiCard').style.display = 'block';
+    document.getElementById('aiResult').style.display = 'none';
+    document.getElementById('aiDisclaimer').style.display = 'none';
+    window._lastPredData = data;
   }
+
+  // AI Interpretation button
+  document.getElementById('aiInterpretBtn').addEventListener('click', async function() {
+    var btn = this;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner" style="width:16px;height:16px;border-width:2px;"></span> Generating...';
+    try {
+      var payload = window._lastPredData || {};
+      var resp = await fetch('/api/ai/interpret', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patient_data: payload.input_summary || {},
+          predictions: payload,
+          ward_type: payload.ward_type || 'ICU'
+        })
+      });
+      var ai = await resp.json();
+      document.getElementById('aiSource').textContent = ai.source || 'template';
+      var resultDiv = document.getElementById('aiResult');
+      resultDiv.style.display = 'block';
+      resultDiv.innerHTML = '<div style="font-size:13px; line-height:1.7; color:var(--text-1); white-space:pre-wrap;">' + (ai.interpretation || ai.error || 'No interpretation available') + '</div>';
+      if (ai.disclaimer) {
+        var disc = document.getElementById('aiDisclaimer');
+        disc.style.display = 'block';
+        disc.textContent = ai.disclaimer;
+      }
+    } catch (err) {
+      document.getElementById('aiResult').style.display = 'block';
+      document.getElementById('aiResult').innerHTML = '<div style="color:var(--danger);">Failed to generate interpretation: ' + err.message + '</div>';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<span class="icon icon-sm"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg></span> Regenerate Interpretation';
+    }
+  });
+
+  // Ward type selector info
+  var wardProfiles = {
+    MICU: { name: 'Medical ICU', desc: 'Sepsis, respiratory failure, organ dysfunction', risks: ['Sepsis', 'Mortality', 'Ventilation'] },
+    SICU: { name: 'Surgical ICU', desc: 'Post-operative, trauma, bleeding', risks: ['Vasopressor', 'AKI', 'Ventilation'] },
+    CCU:  { name: 'Cardiac Care Unit', desc: 'MI, heart failure, arrhythmias', risks: ['Mortality', 'Vasopressor'] },
+    CSRU: { name: 'Cardiac Surgery Recovery', desc: 'Post-CABG, valve replacement', risks: ['AKI', 'Ventilation', 'LOS'] },
+    TSICU:{ name: 'Trauma/Surgical ICU', desc: 'TBI, polytrauma, burns', risks: ['Vasopressor', 'Ventilation', 'Sepsis'] },
+    WARD: { name: 'Normal Ward', desc: 'General ward — lower acuity, step-down care. ICU transfer will be evaluated.', risks: ['Early Warning', 'Sepsis', 'Mortality'] }
+  };
+  var wardSel = document.getElementById('ward_type');
+  wardSel.addEventListener('change', function() {
+    var p = wardProfiles[this.value];
+    var info = document.getElementById('wardInfo');
+    if (p) {
+      info.style.display = 'block';
+      document.getElementById('wardInfoName').textContent = p.name;
+      document.getElementById('wardInfoDesc').textContent = p.desc;
+      var risksHTML = '';
+      p.risks.forEach(function(r) { risksHTML += '<span style="font-size:10px; font-weight:600; padding:2px 8px; border-radius:100px; background:var(--primary-bg); color:var(--primary);">' + r + '</span>'; });
+      document.getElementById('wardInfoRisks').innerHTML = risksHTML;
+    } else { info.style.display = 'none'; }
+  });
   // Auto-MAP calculation
   var sysbpEl = document.getElementById('sysbp');
   var diasbpEl = document.getElementById('diasbp');

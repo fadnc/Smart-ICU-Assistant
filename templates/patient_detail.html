@@ -216,6 +216,38 @@
     {% endfor %}
   </div>
 </div>
+
+<!-- Care Unit Context -->
+<div class="card fade-up fade-up-3" style="margin-bottom: 16px;">
+  <div class="card-head">
+    <span class="card-label"><span class="icon icon-sm" style="color:var(--accent);"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 13c1.66 0 3-1.34 3-3S8.66 7 7 7s-3 1.34-3 3 1.34 3 3 3zm12-6h-8v7H3V5H1v15h2v-3h18v3h2v-9c0-2.21-1.79-4-4-4z"/></svg></span> Care Unit Context</span>
+    <span class="card-badge" id="unitBadge">{{ patient.first_careunit or 'Unknown' }}</span>
+  </div>
+  <div class="card-body" id="unitContextBody">
+    <div style="color:var(--text-3); font-size:12px;">Loading unit context...</div>
+  </div>
+</div>
+
+<!-- AI Clinical Interpretation -->
+<div class="card fade-up fade-up-4">
+  <div class="card-head">
+    <span class="card-label"><span class="icon icon-sm" style="color:#a855f7;"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg></span> AI Clinical Interpretation</span>
+    <span class="card-badge" id="aiSrcBadge">—</span>
+  </div>
+  <div class="card-body">
+    <div style="display:flex; gap:8px; margin-bottom:12px;">
+      <button class="btn btn-primary" id="aiInterpBtn" style="flex:1; justify-content:center;">
+        <span class="icon icon-sm"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg></span>
+        Generate Interpretation
+      </button>
+      <button class="btn" id="aiHandoffBtn" style="flex:1; justify-content:center;">
+        Shift Handoff (SBAR)
+      </button>
+    </div>
+    <div id="aiContent" style="display:none; font-size:13px; line-height:1.7; color:var(--text-1); white-space:pre-wrap;"></div>
+    <div id="aiDisc" style="display:none; margin-top:12px; padding:10px 14px; background:var(--warning-bg); border:1px solid var(--warning-border); border-radius:var(--radius-sm); font-size:11px; color:var(--warning);"></div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -429,6 +461,80 @@
       document.getElementById('vitalsSource').textContent = 'unavailable';
       document.getElementById('sparklineGrid').innerHTML = '<div style="grid-column:span 4; text-align:center; padding:20px; color:var(--text-3); font-size:13px;">Unable to load vital signs data</div>';
     });
+  // ── Care Unit Context ───────────────────────────────────
+  var careUnit = '{{ patient.first_careunit or "" }}';
+  if (careUnit) {
+    fetch('/api/ward_profiles/' + encodeURIComponent(careUnit))
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var p = data.profile;
+        if (!p) return;
+        var html = '<div style="font-weight:600; color:var(--text-1); margin-bottom:6px;">' + (p.name || careUnit) + '</div>';
+        html += '<div style="font-size:12px; color:var(--text-2); margin-bottom:10px;">' + (p.description || '') + '</div>';
+        html += '<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;">';
+        (p.key_risks || []).forEach(function(r) {
+          html += '<span style="font-size:10px; font-weight:600; padding:3px 10px; border-radius:100px; background:var(--primary-bg); color:var(--primary); border:1px solid var(--primary-border);">' + r + '</span>';
+        });
+        html += '</div>';
+        if (p.typical_conditions) {
+          html += '<div style="font-size:11px; color:var(--text-3); margin-bottom:6px;">Typical: ' + p.typical_conditions.join(', ') + '</div>';
+        }
+        html += '<div style="font-size:11px; color:var(--text-3);">Monitoring: ' + (p.monitoring_freq || '—') + ' | Nurse ratio: ' + (p.nurse_ratio || '—') + '</div>';
+        document.getElementById('unitContextBody').innerHTML = html;
+      })
+      .catch(function() {
+        document.getElementById('unitContextBody').innerHTML = '<div style="color:var(--text-3); font-size:12px;">Unit context unavailable</div>';
+      });
+  }
+
+  // ── AI Interpretation ──────────────────────────────────
+  function callAI(endpoint, btn) {
+    btn.disabled = true;
+    var origHTML = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;"></span> Generating...';
+    var predData = {
+      composite_score: {{ pred.composite_score }},
+      risk_level: '{{ pred.risk_level }}',
+      scores: {{ pred.scores | tojson }},
+      groups: {{ pred.groups | tojson }},
+      source: '{{ pred.source }}'
+    };
+    var patientData = {
+      demographics: { age: {{ patient.age or 60 }}, gender: '{{ patient.gender or "M" }}' },
+      diagnosis: '{{ patient.diagnosis or "" }}',
+      first_careunit: '{{ patient.first_careunit or "" }}'
+    };
+    fetch('/api/ai/' + endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        patient_data: patientData,
+        predictions: predData,
+        ward_type: careUnit || 'ICU'
+      })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(ai) {
+      var text = ai.interpretation || ai.handoff || ai.error || 'No response';
+      document.getElementById('aiContent').style.display = 'block';
+      document.getElementById('aiContent').innerHTML = '<div style="white-space:pre-wrap;">' + text + '</div>';
+      document.getElementById('aiSrcBadge').textContent = ai.source || 'template';
+      if (ai.disclaimer) {
+        document.getElementById('aiDisc').style.display = 'block';
+        document.getElementById('aiDisc').textContent = ai.disclaimer;
+      }
+    })
+    .catch(function(err) {
+      document.getElementById('aiContent').style.display = 'block';
+      document.getElementById('aiContent').innerHTML = '<div style="color:var(--danger);">Error: ' + err.message + '</div>';
+    })
+    .finally(function() {
+      btn.disabled = false;
+      btn.innerHTML = origHTML;
+    });
+  }
+  document.getElementById('aiInterpBtn').addEventListener('click', function() { callAI('interpret', this); });
+  document.getElementById('aiHandoffBtn').addEventListener('click', function() { callAI('handoff', this); });
 })();
 </script>
 {% endblock %}
