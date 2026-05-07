@@ -20,17 +20,6 @@ Endpoints (same contract as Flask version):
     GET  /docs                                  → Swagger UI (auto)
     GET  /redoc                                 → ReDoc (auto)
 
-FIXES applied in this revision:
-  1. SHAP "DataFrame is ambiguous" — outputevents was wrongly passed as
-     cached("labevents", ...) which is a DataFrame. Changed to None (safe
-     default) since outputevents is not separately cached in the app.
-  2. Model loading for ensemble/stacked_ensemble — these produce a
-     placeholder model_path string like "ensemble (no single checkpoint)",
-     not a real file. Now falls back to the best individual model
-     (xgboost > lstm > transformer) that has an actual saved checkpoint.
-  3. Jinja2 | min(100) crash — min() is a sequence filter in Jinja2, not
-     a numeric clamp. Fixed in the template by using an inline if expression.
-     Also added a custom 'clamp' filter to Jinja2 environment as a safety net.
 """
 
 # ── Stdlib ────────────────────────────────────────────────────────────────────
