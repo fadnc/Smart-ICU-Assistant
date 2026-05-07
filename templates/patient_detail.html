@@ -337,6 +337,14 @@
     heartrate: 'var(--danger)', sysbp: 'var(--primary)', diasbp: 'var(--accent)',
     spo2: 'var(--success)', resprate: 'var(--warning)', tempc: '#e879f9'
   };
+  var chartUnits = {
+    heartrate: 'bpm', sysbp: 'mmHg', diasbp: 'mmHg', meanbp: 'mmHg',
+    spo2: '%', resprate: '/min', tempc: '°C', glucose: 'mg/dL'
+  };
+  var chartNames = {
+    heartrate: 'Heart Rate', sysbp: 'Systolic BP', diasbp: 'Diastolic BP', meanbp: 'Mean BP',
+    spo2: 'SpO₂', resprate: 'Resp Rate', tempc: 'Temperature', glucose: 'Glucose'
+  };
 
   function drawChart(key) {
     currentKey = key;
@@ -374,23 +382,20 @@
       yLabels += '<line x1="' + padL + '" y1="' + yy + '" x2="' + (w - padR) + '" y2="' + yy + '" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="4"/>';
     }
 
-    // X-axis time labels
+    // X-axis time labels — use per-vital charttime array (not raw vitals index)
     var xLabels = '';
     var xAxisY = h - padB + 4;
-    // Show ~6 evenly spaced time labels along x-axis
-    var rawVitals = window._rawVitals || [];
+    var vitalTimes = (window._vitalTimes && window._vitalTimes[key]) || [];
     var numXLabels = Math.min(6, vals.length);
     for (var xi = 0; xi < numXLabels; xi++) {
       var idx = Math.round(xi * (vals.length - 1) / (numXLabels - 1));
       var xx = padL + (idx / (vals.length - 1)) * (w - padL - padR);
       var timeLabel = '';
-      if (rawVitals[idx] && rawVitals[idx].charttime) {
-        var ct = rawVitals[idx].charttime;
-        // Extract HH:MM from ISO datetime string
+      if (vitalTimes[idx]) {
+        var ct = vitalTimes[idx];
         var tparts = ct.split('T');
         if (tparts[1]) { timeLabel = tparts[1].substring(0, 5); }
         else { timeLabel = 'T' + idx; }
-        // Add date on first and last labels
         if (xi === 0 || xi === numXLabels - 1) { timeLabel = tparts[0].substring(5) + ' ' + timeLabel; }
       } else {
         timeLabel = 'hr ' + idx;
@@ -400,8 +405,9 @@
     }
     // X-axis baseline
     xLabels += '<line x1="' + padL + '" y1="' + (h - padB) + '" x2="' + (w - padR) + '" y2="' + (h - padB) + '" stroke="var(--border)" stroke-width="1"/>';
-    // "Time" label
-    xLabels += '<text x="' + ((padL + w - padR) / 2) + '" y="' + (h - 4) + '" text-anchor="middle" fill="var(--text-3)" font-size="10" font-weight="600" letter-spacing="0.05em">TIME</text>';
+    // Axis title — vital name + unit
+    var vitalLabel = (chartNames[key] || key) + ' (' + (chartUnits[key] || '') + ') over Time';
+    xLabels += '<text x="' + ((padL + w - padR) / 2) + '" y="' + (h - 2) + '" text-anchor="middle" fill="var(--text-3)" font-size="10" font-weight="600" letter-spacing="0.05em">' + vitalLabel + '</text>';
 
     svg.innerHTML = yLabels + xLabels
       + '<path d="' + areaPath + '" fill="' + color + '" opacity="0.08"/>'
@@ -432,18 +438,22 @@
 
   // ── Fetch Vitals ───────────────────────────────────────────
   // API returns [{charttime, heartrate, sysbp, ...}, ...] — pivot to {heartrate: [v1,...]}
+  // Also stores per-vital charttime arrays so x-axis labels always match
   function pivotVitals(rawList) {
     if (!Array.isArray(rawList) || rawList.length === 0) return {};
     var keys = ['heartrate','sysbp','diasbp','meanbp','resprate','tempc','spo2','glucose'];
     var result = {};
-    keys.forEach(function(k) { result[k] = []; });
+    var times = {};  // per-vital charttime arrays
+    keys.forEach(function(k) { result[k] = []; times[k] = []; });
     rawList.forEach(function(row) {
       keys.forEach(function(k) {
         if (row[k] !== null && row[k] !== undefined && !isNaN(row[k])) {
           result[k].push(row[k]);
+          times[k].push(row.charttime || null);
         }
       });
     });
+    window._vitalTimes = times;  // store for x-axis label lookup
     return result;
   }
 

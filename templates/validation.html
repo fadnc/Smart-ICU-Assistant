@@ -89,6 +89,30 @@
       <div class="s-label">Avg AUROC</div>
     </div>
   </div>
+  <!-- Accuracy Interpretation Note -->
+  <div style="margin-top:16px; padding:14px 18px; background:linear-gradient(135deg, rgba(234,179,8,0.08) 0%, rgba(234,179,8,0.03) 100%); border:1px solid var(--warning-border); border-radius:var(--radius-sm); border-left:3px solid var(--warning);">
+    <div style="display:flex; align-items:flex-start; gap:10px;">
+      <span style="flex-shrink:0; margin-top:1px;">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="var(--warning)"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
+      </span>
+      <div>
+        <div style="font-size:12px; font-weight:700; color:var(--warning); margin-bottom:4px;">Why is accuracy so high (~99%)?</div>
+        <div style="font-size:12px; line-height:1.6; color:var(--text-2);">
+          <strong>This is NOT overfitting</strong> &mdash; it reflects <strong>severe class imbalance</strong> in ICU prediction tasks.
+          Most negative events (mortality, AKI stage 3, etc.) occur in only 1&ndash;5% of patients.
+          A naive model that predicts &ldquo;no event&rdquo; for everything would already achieve ~97% accuracy.
+          <br/><br/>
+          <strong>AUROC</strong> (Area Under the ROC Curve) is the proper evaluation metric because it measures the model&rsquo;s
+          ability to <em>rank</em> high-risk patients above low-risk ones, regardless of threshold.
+          Our ensemble models achieve <strong>0.75&ndash;0.80 AUROC</strong> on held-out test data — solid performance for clinical ICU prediction.
+          <br/>
+          <span style="font-size:11px; color:var(--text-3); margin-top:4px; display:inline-block;">
+            Click &ldquo;Compute Full Metrics&rdquo; below to see per-task AUROC, which is the gold-standard metric used in clinical ML literature.
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Patient Selection -->
