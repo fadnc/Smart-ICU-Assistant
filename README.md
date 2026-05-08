@@ -134,10 +134,6 @@ SEM-4-PROJECT/
 |   |-- alerts.html               # Active clinical alerts
 |   |-- new_assessment.html       # Manual assessment form
 |
-|-- docs/
-|   |-- FADHIL_PROJECT_DOCUMENTATION.md   # Comprehensive docs for Fadhil
-|   |-- RAHA_PROJECT_DOCUMENTATION.md     # Comprehensive docs for Raha
-|
 |-- report/                       # LaTeX report (Fadhil, 54 pages)
 |-- report2/                      # LaTeX report (Raha, 53 pages)
 |-- tests/                        # Unit tests (24 tests)
