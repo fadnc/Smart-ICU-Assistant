@@ -15,14 +15,14 @@
        DARK THEME (default — premium dark-first design)
        ═══════════════════════════════════════════════════════════ */
     :root, [data-theme="dark"] {
-      --bg:          #060918;
-      --bg-2:        #0a0f1e;
-      --bg-card:     rgba(15,22,41,0.65);
-      --bg-card-2:   rgba(15,22,41,0.45);
-      --bg-card-solid: #0f1629;
-      --bg-nav:      rgba(10,15,30,0.82);
-      --bg-input:    rgba(255,255,255,0.04);
-      --border:      rgba(255,255,255,0.06);
+      --bg:          #050505;
+      --bg-2:        #0a0a0a;
+      --bg-card:     rgba(15,15,15,0.7);
+      --bg-card-2:   rgba(20,20,20,0.5);
+      --bg-card-solid: #0f0f0f;
+      --bg-nav:      rgba(10,10,10,0.85);
+      --bg-input:    rgba(255,255,255,0.03);
+      --border:      rgba(255,255,255,0.05);
       --border-2:    rgba(255,255,255,0.1);
       --shadow:      0 2px 8px rgba(0,0,0,0.3), 0 8px 32px rgba(0,0,0,0.2);
       --shadow-lg:   0 8px 40px rgba(0,0,0,0.5), 0 0 80px rgba(0,212,255,0.03);
@@ -57,7 +57,8 @@
       --radius:      16px;
       --radius-sm:   10px;
       --radius-pill: 100px;
-      --transition:  0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      --transition:  0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      --spring:      0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
       --glass:       blur(20px) saturate(1.4);
     }
 
@@ -101,13 +102,21 @@
 
     html { scroll-behavior: smooth; }
     body {
-      background: linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
-      background-attachment: fixed;
+      background: var(--bg);
       color: var(--text-1);
       font-family: var(--ff-body); font-size: 14px; line-height: 1.7;
       min-height: 100vh; overflow-x: hidden;
       transition: background var(--transition), color var(--transition);
+      position: relative;
     }
+    body::before {
+      content: ''; position: fixed; top: -50%; left: -50%; width: 200%; height: 200%;
+      background: radial-gradient(circle at 50% 50%, rgba(0,212,255,0.03) 0%, transparent 40%),
+                  radial-gradient(circle at 80% 20%, rgba(168,85,247,0.03) 0%, transparent 40%);
+      pointer-events: none; z-index: -1;
+      animation: bgPulse 15s ease-in-out infinite alternate;
+    }
+    @keyframes bgPulse { 0% { transform: scale(1) translate(0, 0); } 100% { transform: scale(1.1) translate(-2%, 2%); } }
     [data-theme="light"] body { background: var(--bg); }
 
     ::-webkit-scrollbar { width: 6px; }
@@ -295,8 +304,8 @@
       border-bottom: 1px solid var(--border);
       transition: background var(--transition);
     }
-    .data-table tbody tr { cursor: pointer; transition: background var(--transition), border-color var(--transition); border-left: 3px solid transparent; }
-    .data-table tbody tr:hover { background: var(--primary-bg); border-left-color: var(--primary); }
+    .data-table tbody tr { cursor: pointer; transition: all var(--spring); border-left: 3px solid transparent; }
+    .data-table tbody tr:hover { background: var(--primary-bg); border-left-color: var(--primary); transform: translateX(4px); }
 
     /* ── BADGES ───────────────────────────────────────────────── */
     .badge {
@@ -319,7 +328,7 @@
       border-radius: var(--radius-pill); cursor: pointer;
       border: 1px solid var(--border-2); background: var(--bg-card);
       color: var(--text-2); text-decoration: none;
-      transition: all var(--transition);
+      transition: all var(--spring);
       display: inline-flex; align-items: center; gap: 6px;
       backdrop-filter: blur(4px);
     }
@@ -473,6 +482,10 @@
       outline: 2px solid var(--primary); outline-offset: 1px;
       border-color: var(--primary) !important;
     }
+    select option {
+      background: var(--bg-card-solid);
+      color: var(--text-1);
+    }
     .btn:focus-visible {
       outline: 2px solid var(--primary); outline-offset: 2px;
     }
@@ -524,10 +537,10 @@
 
     /* ── ANIMATIONS ───────────────────────────────────────────── */
     @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(16px); }
-      to   { opacity: 1; transform: translateY(0); }
+      from { opacity: 0; transform: translateY(24px) scale(0.98); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
     }
-    .fade-up { opacity: 0; animation: fadeUp 0.5s ease forwards; }
+    .fade-up { opacity: 0; animation: fadeUp var(--spring) forwards; }
     .fade-up-1 { animation-delay: 0.08s; }
     .fade-up-2 { animation-delay: 0.16s; }
     .fade-up-3 { animation-delay: 0.24s; }
@@ -560,8 +573,7 @@
     <a class="brand" href="/">
       <div class="brand-icon">
         <svg viewBox="0 0 24 24" fill="white">
-          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9v-2h2v2zm0-4H9V7h2v5zm4 4h-2v-2h2v2zm0-4h-2V7h2v5z" opacity="0.3"/>
-          <path d="M16 4h-2V2h-4v2H8C6.9 4 6 4.9 6 6v2h12V6c0-1.1-.9-2-2-2zM6 20c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V10H6v10zm2-8h2v6H8v-6zm4 0h2v6h-2v-6z"/>
+          <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10h-3.5v3.5h-3V13H7v-3h3.5V6.5h3V10H17v3z"/>
         </svg>
       </div>
       <span class="brand-text">Smart<span>ICU</span></span>

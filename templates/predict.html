@@ -20,10 +20,10 @@
       padding: 10px 14px; background: var(--bg-input); border: 1px solid var(--border-2);
       border-radius: var(--radius-sm); color: var(--text-1); font-size: 13px;
       font-family: var(--ff-mono); outline: none;
-      transition: border-color var(--transition), box-shadow var(--transition);
+      transition: all var(--spring);
       backdrop-filter: blur(4px);
     }
-    .form-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-bg); }
+    .form-input:focus { border-color: var(--primary); box-shadow: 0 0 0 4px var(--primary-bg); transform: translateY(-1px); }
     .form-check {
       display: flex; align-items: center; gap: 8px;
       padding: 8px 0; font-size: 13px; color: var(--text-2);
@@ -34,9 +34,9 @@
     .form-select {
       padding: 9px 12px; background: var(--bg-input); border: 1px solid var(--border-2);
       border-radius: var(--radius-sm); color: var(--text-1); font-size: 13px;
-      font-family: inherit; outline: none; transition: border-color var(--transition);
+      font-family: inherit; outline: none; transition: all var(--spring);
     }
-    .form-select:focus { border-color: var(--primary); }
+    .form-select:focus { border-color: var(--primary); box-shadow: 0 0 0 4px var(--primary-bg); transform: translateY(-1px); }
 
     /* Results panel */
     .results-panel { display: none; }
@@ -490,14 +490,14 @@
         el.classList.add('input-error');
         if (hint) {
           hint.className = 'input-hint error';
-          hint.textContent = '⛔ Outside valid range (' + r.min + '–' + r.max + ' ' + r.unit + ')';
+          hint.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12" style="display:inline; vertical-align:middle; margin-top:-2px; margin-right:4px;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>Outside valid range (' + r.min + '–' + r.max + ' ' + r.unit + ')';
         }
         errors.push(id.toUpperCase() + ' = ' + val + ' is beyond human limits (' + r.min + '–' + r.max + ')');
       } else if (val < r.warnLo || val > r.warnHi) {
         el.classList.add('input-warn');
         if (hint) {
           hint.className = 'input-hint warn';
-          hint.textContent = '⚠ Extreme value — verify correctness';
+          hint.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12" style="display:inline; vertical-align:middle; margin-top:-2px; margin-right:4px;"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>Extreme value — verify correctness';
         }
         warnings.push(id.toUpperCase() + ' = ' + val + ' (extreme but possible)');
       }
@@ -693,7 +693,7 @@
       document.getElementById('icuTransferCard').style.display = 'block';
       var urgColor = tc.urgency === 'IMMEDIATE' ? 'var(--danger)' : tc.urgency === 'URGENT' ? 'var(--warning)' : 'var(--primary)';
       var tcHTML = '<div style="padding:16px; background:var(--danger-bg); border:2px solid var(--danger-border); border-radius:var(--radius-sm); margin-bottom:8px;">';
-      tcHTML += '<div style="font-size:16px; font-weight:800; color:' + urgColor + '; margin-bottom:8px;">⚠️ ' + tc.urgency + ' — ICU Transfer Recommended</div>';
+      tcHTML += '<div style="font-size:16px; font-weight:800; color:' + urgColor + '; margin-bottom:8px;"><svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18" style="display:inline; vertical-align:middle; margin-top:-3px; margin-right:6px;"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>' + tc.urgency + ' — ICU Transfer Recommended</div>';
       tcHTML += '<ul style="margin:0; padding-left:20px; font-size:13px; color:var(--text-1);">';
       (tc.reason || []).forEach(function(r) { tcHTML += '<li>' + r + '</li>'; });
       tcHTML += '</ul></div>';
