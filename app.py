@@ -1653,50 +1653,52 @@ def _run_models_on_input(v: VitalsInput, l: LabsInput) -> dict:
     n_features = len(feat_vals)
     seq = np.array([feat_vals] * 24, dtype=np.float32)
     X = seq[np.newaxis, :, :]
+    X_flat = X.reshape(1, -1)
 
     scores = {}
     for task, info in _model_registry.items():
         try:
             labels = info["labels"]
             mtype  = info["type"]
-            model  = info["model"]
 
-            if mtype == "xgboost":
-                X_flat = X.reshape(1, -1)
-                for i, m in enumerate(model.models):
-                    if m is None or i >= len(labels):
-                        continue
-                    expected = m.n_features_in_ if hasattr(m, 'n_features_in_') else X_flat.shape[1]
-                    if X_flat.shape[1] < expected:
-                        X_flat = np.pad(X_flat, ((0,0),(0, expected - X_flat.shape[1])))
-                    elif X_flat.shape[1] > expected:
-                        X_flat = X_flat[:, :expected]
-                    prob = float(m.predict_proba(X_flat)[0, 1])
-                    scores[labels[i]] = round(prob, 4)
+            # ── Ensemble / Stacked Ensemble ──────────────────────────────
+            if mtype in ("weighted_ensemble", "stacked_ensemble"):
+                components  = info["components"]
+                weights_map = info.get("weights", {})
+                meta_lrs    = info.get("meta_learners", [])
+
+                # Run each component model
+                comp_preds = {}
+                for cname, cinfo in components.items():
+                    comp_preds[cname] = _predict_single_component(cinfo, X, X_flat)
+
+                comp_names = list(comp_preds.keys())
+
+                if mtype == "weighted_ensemble":
+                    raw_w = np.array([weights_map.get(n, 1.0) for n in comp_names])
+                    w = raw_w / raw_w.sum()
+                    for lbl in labels:
+                        vals = [comp_preds[n].get(lbl, 0.0) for n in comp_names]
+                        scores[lbl] = round(float(np.average(vals, weights=w)), 4)
+
+                elif mtype == "stacked_ensemble":
+                    for i, lbl in enumerate(labels):
+                        vals = [comp_preds[n].get(lbl, 0.0) for n in comp_names]
+                        if i < len(meta_lrs) and meta_lrs[i] is not None:
+                            meta_X = np.array(vals).reshape(1, -1)
+                            scores[lbl] = round(float(
+                                meta_lrs[i].predict_proba(meta_X)[0, 1]
+                            ), 4)
+                        else:
+                            scores[lbl] = round(float(np.mean(vals)), 4)
+
+            # ── Single model (XGBoost / LightGBM / DL) ──────────────────
             else:
-                import torch
-                X_t = torch.FloatTensor(X)
-                try:
-                    with torch.no_grad():
-                        out = model(X_t).numpy()[0]
-                except RuntimeError:
-                    if hasattr(model, 'lstm'):
-                        expected = model.lstm.input_size
-                    elif hasattr(model, 'input_proj'):
-                        expected = model.input_proj.in_features
-                    else:
-                        continue
-                    if n_features < expected:
-                        X_padded = np.pad(X, ((0,0),(0,0),(0, expected - n_features)))
-                        X_t = torch.FloatTensor(X_padded)
-                    elif n_features > expected:
-                        X_t = torch.FloatTensor(X[:, :, :expected])
-                    with torch.no_grad():
-                        out = model(X_t).numpy()[0]
+                scores.update({
+                    k: round(v, 4)
+                    for k, v in _predict_single_component(info, X, X_flat).items()
+                })
 
-                for i, lbl in enumerate(labels):
-                    if i < len(out):
-                        scores[lbl] = round(float(out[i]), 4)
         except Exception:
             print(f"[WARN] Model prediction failed for task={task}:")
             traceback.print_exc()
