@@ -410,7 +410,7 @@ Access the dashboard at `http://localhost:8000`. API documentation is available 
 
 | Task | Best Model | AUROC | Ensemble AUROC | F1 | Sensitivity |
 |------|-----------|-------|---------------|-----|-------------|
-| Mortality (24h) | LightGBM | 0.77 | 0.78 | 0.18 | 0.20 |
+| Mortality (24h) | XGBoost | 0.76 | 0.79 | 0.12 | 0.19 |
 | Sepsis (24h) | LightGBM | 0.76 | 0.77 | 0.63 | 0.77 |
 | AKI Stage 1 (24h) | LightGBM | 0.85 | 0.85 | 0.59 | 0.61 |
 | AKI Stage 2 (24h) | LightGBM | 0.79 | 0.79 | 0.35 | 0.39 |
@@ -420,7 +420,7 @@ Access the dashboard at `http://localhost:8000`. API documentation is available 
 | LOS Short (<24h) | LightGBM | 0.79 | 0.79 | 0.56 | 0.69 |
 | LOS Long (>72h) | LightGBM | 0.79 | 0.80 | 0.75 | 0.85 |
 
-Tree-based models (LightGBM) outperformed deep learning across all six tasks — likely because clinical definitions are inherently threshold-based and 24 timesteps is insufficient for self-attention to pay off. Ensemble methods consistently improved AUROC by 0.01–0.02. Ventilation achieved the strongest result (0.85 AUROC, 0.84 F1, 0.89 sensitivity). Mortality remains the hardest task due to extreme class imbalance (3.2% positive rate, 30:1 ratio).
+Tree-based models outperformed deep learning across all six tasks — likely because clinical definitions are inherently threshold-based and 24 timesteps is insufficient for self-attention to pay off. LightGBM led five of six tasks, while XGBoost edged ahead for mortality prediction (mean AUROC 0.76 vs. 0.75). Ensemble methods consistently improved AUROC by 0.01–0.02. Ventilation achieved the strongest result (0.85 AUROC, 0.84 F1, 0.89 sensitivity). Mortality remains the hardest task due to extreme class imbalance (3.2% positive rate, 30:1 ratio).
 
 ---
 
