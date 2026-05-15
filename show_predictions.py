@@ -46,17 +46,24 @@ def get_best_per_task_metrics(report):
 
 def print_subtask_rows(task_num, report, label_map):
     """Print individual subtask rows with AUROC, F1, Sensitivity."""
-    metrics, best_model = get_best_per_task_metrics(report)
-    if not metrics:
+    comparison = report.get('comparison', {})
+    best_model = report.get('best_model', '')
+
+    if not comparison:
         for sub_name, _ in label_map:
             print(f"  {'':<3} {'  └─ ' + sub_name:<30} {'—':<16} {'N/A':>8} {'N/A':>8} {'N/A':>8}")
         return
 
     for sub_name, task_idx in label_map:
-        auroc = metrics.get(f'task_{task_idx}_auroc', 0)
-        f1    = metrics.get(f'task_{task_idx}_f1', 0)
-        sens  = metrics.get(f'task_{task_idx}_sensitivity', 0)
-        print(f"  {'':<3} {'  +- ' + sub_name:<30} {best_model:<16} {fmt(auroc)} {fmt(f1)} {fmt(sens)}")
+        print(f"  {'':<3} {'  +- ' + sub_name:<30}")
+        for m, v in comparison.items():
+            if isinstance(v, dict):
+                metrics = v.get('per_task_metrics', {})
+                auroc = metrics.get(f'task_{task_idx}_auroc', 0)
+                f1    = metrics.get(f'task_{task_idx}_f1', 0)
+                sens  = metrics.get(f'task_{task_idx}_sensitivity', 0)
+                marker = "*" if m == best_model else ""
+                print(f"  {'':<3} {'':<30} {marker + m:<16} {fmt(auroc)} {fmt(f1)} {fmt(sens)}")
 
 
 def print_task_summary(task_num, task_name, report):
