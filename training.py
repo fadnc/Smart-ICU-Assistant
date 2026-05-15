@@ -209,6 +209,45 @@ class MultiTaskBCEWithLogitsLoss(nn.Module):
         return task_losses.mean()
 
 
+class MultiTaskFocalLossWithLogits(nn.Module):
+    """
+    AMP-safe multi-task focal loss with logits and pos_weight support.
+    Dynamically scales down loss of easy-to-classify examples.
+    """
+    def __init__(self, pos_weight: Optional[torch.Tensor] = None,
+                 task_weights: Optional[List[float]] = None,
+                 label_smoothing: float = 0.0,
+                 gamma: float = 2.0):
+        super().__init__()
+        self.task_weights     = task_weights
+        self.label_smoothing  = label_smoothing
+        self.gamma            = gamma
+        self._pos_weight      = pos_weight
+
+    def set_pos_weight(self, pos_weight: torch.Tensor):
+        self._pos_weight = pos_weight
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        if self.label_smoothing > 0:
+            targets = targets * (1.0 - self.label_smoothing) + 0.5 * self.label_smoothing
+
+        pw = self._pos_weight
+        if pw is not None:
+            pw = pw.to(logits.device)
+            bce_loss = nn.functional.binary_cross_entropy_with_logits(logits, targets, reduction='none', pos_weight=pw)
+        else:
+            bce_loss = nn.functional.binary_cross_entropy_with_logits(logits, targets, reduction='none')
+
+        pt = torch.exp(-bce_loss)
+        focal_loss = ((1 - pt) ** self.gamma) * bce_loss
+
+        task_losses = focal_loss.mean(dim=0)
+        if self.task_weights is not None:
+            weights     = torch.tensor(self.task_weights, device=task_losses.device)
+            task_losses = task_losses * weights
+        return task_losses.mean()
+
+
 # ── Temporal split ────────────────────────────────────────────────────────────
 
 def temporal_split_data(
@@ -286,7 +325,11 @@ class ModelTrainer:
 
         self.scaler    = torch.amp.GradScaler('cuda', enabled=self.use_amp)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
-        self.criterion = MultiTaskBCEWithLogitsLoss(label_smoothing=self.label_smoothing)
+        
+        if config.get('LOSS_FUNCTION', 'bce') == 'focal':
+            self.criterion = MultiTaskFocalLossWithLogits(label_smoothing=self.label_smoothing)
+        else:
+            self.criterion = MultiTaskBCEWithLogitsLoss(label_smoothing=self.label_smoothing)
 
         # LR scheduler
         if self.scheduler_type == 'cosine':

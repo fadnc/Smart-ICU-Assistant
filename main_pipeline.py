@@ -249,6 +249,7 @@ class SmartICUPipeline:
                     d_items=self.data_loader.d_items,
                     d_labitems=self.data_loader.d_labitems,
                     window_hours=self.config.get('LSTM_CONFIG', {}).get('sequence_length', 24),
+                    patient_age=stay.get('age')
                 )
                 if features is None or len(features) == 0:
                     continue

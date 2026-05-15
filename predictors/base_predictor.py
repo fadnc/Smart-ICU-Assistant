@@ -23,7 +23,7 @@ import yaml
 from tqdm import tqdm
 
 import torch
-from models import create_model, XGBoostPredictor, LightGBMPredictor
+from models import create_model, XGBoostPredictor, LightGBMPredictor, CatBoostPredictor
 from training import ModelTrainer, clear_gpu_memory, temporal_split_data
 
 logger = logging.getLogger(__name__)
@@ -38,7 +38,7 @@ class BasePredictor(ABC):
     LABEL_PREFIX:     str       = ""
 
     # TCN removed — BatchNorm1d → NaN loss under FP16 AMP with imbalanced labels
-    MODELS_TO_TRY: List[str] = ['lstm', 'transformer', 'xgboost', 'lightgbm']
+    MODELS_TO_TRY: List[str] = ['lstm', 'transformer', 'tcn', 'xgboost', 'lightgbm', 'catboost']
 
     def __init__(self, config_path: str = 'config.yaml'):
         self.config      = self._load_config(config_path)
@@ -455,6 +455,8 @@ class BasePredictor(ABC):
             return self._train_xgboost(X, y, timestamps, config)
         if model_name == 'lightgbm':
             return self._train_lightgbm(X, y, timestamps, config)
+        if model_name == 'catboost':
+            return self._train_catboost(X, y, timestamps, config)
         return self._train_dl_model(model_name, X, y, timestamps, config)
 
     def _train_dl_model(self, model_name: str, X, y, timestamps, config) -> Dict:
@@ -601,6 +603,62 @@ class BasePredictor(ABC):
         mean_auroc = float(np.mean(aurocs)) if aurocs else 0.0
 
         model_path = os.path.join('models', f'{self.TASK_NAME}_lightgbm.pkl')
+        with open(model_path, 'wb') as f:
+            pickle.dump(predictor, f)
+
+        return {
+            'mean_test_auroc':    mean_auroc,
+            'per_task_metrics':   metrics,
+            'model_path':         model_path,
+            'thresholds':         thresholds,
+            '_test_predictions':  predictions,
+            '_test_targets':      test_y,
+        }
+
+
+    def _train_catboost(self, X, y, timestamps, config) -> dict:
+        """Train CatBoost with per-task scale_pos_weight and early stopping."""
+        import pickle
+        import sys
+        from tqdm import tqdm
+        cb_config = config.get('CATBOOST_CONFIG', {})
+
+        predictor = CatBoostPredictor(
+            num_tasks     = y.shape[1],
+            iterations    = cb_config.get('iterations', 300),
+            depth         = cb_config.get('depth', 6),
+            learning_rate = cb_config.get('learning_rate', 0.1),
+            task_type     = cb_config.get('task_type', 'CPU'),
+            early_stopping_rounds = cb_config.get('early_stopping_rounds', 20),
+        )
+
+        splits           = temporal_split_data(X, y, timestamps)
+        train_X, train_y = splits['train']
+        val_X,   val_y   = splits['val']
+        test_X,  test_y  = splits['test']
+
+        with tqdm(
+            total=y.shape[1],
+            desc=f"  [{self.TASK_NAME}] CatBoost",
+            unit="task",
+            file=sys.stderr,
+            dynamic_ncols=True,
+            leave=False,
+        ) as cb_bar:
+            predictor.fit(train_X, train_y, val_X=val_X, val_y=val_y, verbose=False)
+            cb_bar.update(y.shape[1])
+
+        predictions = predictor.predict_proba(test_X)
+
+        val_predictions = predictor.predict_proba(val_X)
+        thresholds = self._find_optimal_thresholds(val_predictions, val_y)
+
+        metrics = self._compute_test_metrics(predictions, test_y, thresholds)
+
+        aurocs     = [v for k, v in metrics.items() if k.endswith('_auroc') and not k.startswith('macro') and not np.isnan(v)]
+        mean_auroc = float(np.mean(aurocs)) if aurocs else 0.0
+
+        model_path = os.path.join('models', f'{self.TASK_NAME}_catboost.pkl')
         with open(model_path, 'wb') as f:
             pickle.dump(predictor, f)
 

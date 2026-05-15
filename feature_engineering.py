@@ -185,6 +185,8 @@ class FeatureEngineer:
             'tempc': ['temperature c', 'temperature celsius', 'temp c'],
             'spo2': ['spo2', 'o2 saturation'],
             'glucose': ['glucose', 'fingerstick glucose'],
+            'gcs': ['gcs total', 'glasgow coma scale total'],
+            'urine_output': ['urine out', 'foley', 'void'],
         }
 
         mapping = {}
@@ -380,7 +382,8 @@ class FeatureEngineer:
                                    labevents: pd.DataFrame,
                                    d_items: pd.DataFrame,
                                    d_labitems: pd.DataFrame,
-                                   window_hours: int = 24) -> pd.DataFrame:
+                                   window_hours: int = 24,
+                                   patient_age: float = None) -> pd.DataFrame:
         """Extract all features for a single ICU stay."""
         vitals = self.extract_vital_signs(
             chartevents, d_items, icustay_id, icu_intime, icu_outtime
@@ -404,6 +407,9 @@ class FeatureEngineer:
         if len(vitals) > 0 and len(labs) > 0:
             sirs = self.compute_sirs_score(vitals, labs)
             windowed['sirs_score'] = sirs
+
+        if patient_age is not None:
+            windowed['age'] = patient_age
 
         return windowed
 

@@ -181,6 +181,78 @@ class TransformerModel(nn.Module):
 
 
 
+
+# ── Temporal Convolutional Network (TCN) ──────────────────────────────────────
+
+class Chomp1d(nn.Module):
+    def __init__(self, chomp_size):
+        super(Chomp1d, self).__init__()
+        self.chomp_size = chomp_size
+
+    def forward(self, x):
+        return x[:, :, :-self.chomp_size].contiguous()
+
+class TemporalBlock(nn.Module):
+    def __init__(self, n_inputs, n_outputs, kernel_size, stride, dilation, padding, dropout=0.2):
+        super(TemporalBlock, self).__init__()
+        self.conv1 = nn.Conv1d(n_inputs, n_outputs, kernel_size,
+                               stride=stride, padding=padding, dilation=dilation)
+        self.chomp1 = Chomp1d(padding)
+        self.relu1 = nn.ReLU()
+        self.dropout1 = nn.Dropout(dropout)
+
+        self.conv2 = nn.Conv1d(n_outputs, n_outputs, kernel_size,
+                               stride=stride, padding=padding, dilation=dilation)
+        self.chomp2 = Chomp1d(padding)
+        self.relu2 = nn.ReLU()
+        self.dropout2 = nn.Dropout(dropout)
+
+        self.net = nn.Sequential(self.conv1, self.chomp1, self.relu1, self.dropout1,
+                                 self.conv2, self.chomp2, self.relu2, self.dropout2)
+        self.downsample = nn.Conv1d(n_inputs, n_outputs, 1) if n_inputs != n_outputs else None
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        out = self.net(x)
+        res = x if self.downsample is None else self.downsample(x)
+        return self.relu(out + res)
+
+class TCNModel(nn.Module):
+    """
+    TCN model for ICU prediction.
+    Fixed NaN loss by replacing BatchNorm1d with LayerNorm and using safe conv logic.
+    """
+    def __init__(self, input_size: int, num_channels: list = [64, 128, 256],
+                 kernel_size: int = 3, dropout: float = 0.3, num_tasks: int = 6):
+        super().__init__()
+        layers = []
+        num_levels = len(num_channels)
+        for i in range(num_levels):
+            dilation_size = 2 ** i
+            in_channels = input_size if i == 0 else num_channels[i-1]
+            out_channels = num_channels[i]
+            layers += [TemporalBlock(in_channels, out_channels, kernel_size, stride=1, dilation=dilation_size,
+                                     padding=(kernel_size-1) * dilation_size, dropout=dropout)]
+
+        self.tcn = nn.Sequential(*layers)
+        self.norm = nn.LayerNorm(num_channels[-1])
+        self.fc = nn.Sequential(
+            nn.Linear(num_channels[-1], 64),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(64, num_tasks)
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x is (B, T, C) -> TCN needs (B, C, T)
+        x = x.transpose(1, 2)
+        y1 = self.tcn(x)
+        # pooled to (B, C)
+        out = y1[:, :, -1]
+        out = self.norm(out)
+        return self.fc(out)
+
+
 # ── XGBoost ───────────────────────────────────────────────────────────────────
 
 class XGBoostPredictor:
@@ -245,10 +317,25 @@ class XGBoostPredictor:
                 self.models[i] = None
                 continue
 
-            # Per-task class weight: neg_count / pos_count
             pos = y[:, i].sum()
             neg = len(y[:, i]) - pos
             spw = float(neg / pos) if pos > 0 else 1.0
+
+            if pos / len(y[:, i]) < 0.05:
+                target_neg = int(pos * 5)
+                pos_idx = np.where(y[:, i] == 1)[0]
+                neg_idx = np.where(y[:, i] == 0)[0]
+                sampled_neg_idx = np.random.choice(neg_idx, target_neg, replace=False)
+                train_idx = np.concatenate([pos_idx, sampled_neg_idx])
+                np.random.shuffle(train_idx)
+                
+                train_X_task = X_flat[train_idx]
+                train_y_task = y[train_idx, i]
+                spw = 1.0
+            else:
+                train_X_task = X_flat
+                train_y_task = y[:, i]
+
             model.set_params(scale_pos_weight=spw)
 
             if verbose:
@@ -259,7 +346,7 @@ class XGBoostPredictor:
                 fit_kwargs['eval_set'] = [(val_X_flat, val_y[:, i])]
                 model.set_params(early_stopping_rounds=self.early_stopping_rounds)
 
-            model.fit(X_flat, y[:, i], **fit_kwargs)
+            model.fit(train_X_task, train_y_task, **fit_kwargs)
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         X_flat = self.flatten_sequences(X)
@@ -346,10 +433,25 @@ class LightGBMPredictor:
                 self.models[i] = None
                 continue
 
-            # Per-task class weight
             pos = y[:, i].sum()
             neg = len(y[:, i]) - pos
             spw = float(neg / pos) if pos > 0 else 1.0
+
+            if pos / len(y[:, i]) < 0.05:
+                target_neg = int(pos * 5)
+                pos_idx = np.where(y[:, i] == 1)[0]
+                neg_idx = np.where(y[:, i] == 0)[0]
+                sampled_neg_idx = np.random.choice(neg_idx, target_neg, replace=False)
+                train_idx = np.concatenate([pos_idx, sampled_neg_idx])
+                np.random.shuffle(train_idx)
+                
+                train_X_task = X_flat[train_idx]
+                train_y_task = y[train_idx, i]
+                spw = 1.0
+            else:
+                train_X_task = X_flat
+                train_y_task = y[:, i]
+
             model.set_params(scale_pos_weight=spw)
 
             if verbose:
@@ -359,12 +461,12 @@ class LightGBMPredictor:
             if val_X_flat is not None and val_y is not None and self.early_stopping_rounds > 0:
                 callbacks.append(lgb.early_stopping(self.early_stopping_rounds, verbose=False))
                 model.fit(
-                    X_flat, y[:, i],
+                    train_X_task, train_y_task,
                     eval_set=[(val_X_flat, val_y[:, i])],
                     callbacks=callbacks,
                 )
             else:
-                model.fit(X_flat, y[:, i], callbacks=callbacks)
+                model.fit(train_X_task, train_y_task, callbacks=callbacks)
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         X_flat = self.flatten_sequences(X)
@@ -381,6 +483,92 @@ class LightGBMPredictor:
 
 
 
+
+# ── CatBoost ──────────────────────────────────────────────────────────────────
+
+class CatBoostPredictor:
+    def __init__(self,
+                 num_tasks: int = 6,
+                 iterations: int = 300,
+                 depth: int = 6,
+                 learning_rate: float = 0.1,
+                 task_type: str = 'CPU',
+                 early_stopping_rounds: int = 20):
+        try:
+            from catboost import CatBoostClassifier
+        except ImportError:
+            raise ImportError("CatBoost not installed")
+
+        self.num_tasks = num_tasks
+        self.models = []
+        self.early_stopping_rounds = early_stopping_rounds
+
+        for _ in range(num_tasks):
+            self.models.append(CatBoostClassifier(
+                iterations=iterations,
+                depth=depth,
+                learning_rate=learning_rate,
+                task_type=task_type,
+                eval_metric='AUC',
+                random_seed=42,
+                verbose=False
+            ))
+
+    def flatten_sequences(self, X: np.ndarray) -> np.ndarray:
+        return X.reshape(X.shape[0], -1)
+
+    def fit(self, X: np.ndarray, y: np.ndarray, val_X=None, val_y=None, verbose=False):
+        X_flat = self.flatten_sequences(X)
+        val_X_flat = self.flatten_sequences(val_X) if val_X is not None else None
+
+        for i, model in enumerate(self.models):
+            if len(np.unique(y[:, i])) < 2:
+                self.models[i] = None
+                continue
+
+            pos = y[:, i].sum()
+            neg = len(y[:, i]) - pos
+            spw = float(neg / pos) if pos > 0 else 1.0
+
+            # Undersampling if extreme class imbalance (< 5%)
+            if pos / len(y[:, i]) < 0.05:
+                target_neg = int(pos * 5)
+                pos_idx = np.where(y[:, i] == 1)[0]
+                neg_idx = np.where(y[:, i] == 0)[0]
+                sampled_neg_idx = np.random.choice(neg_idx, target_neg, replace=False)
+                train_idx = np.concatenate([pos_idx, sampled_neg_idx])
+                np.random.shuffle(train_idx)
+                
+                train_X_task = X_flat[train_idx]
+                train_y_task = y[train_idx, i]
+                spw = 1.0
+            else:
+                train_X_task = X_flat
+                train_y_task = y[:, i]
+
+            model.set_params(scale_pos_weight=spw)
+
+            fit_kwargs = {'verbose': False}
+            if val_X_flat is not None and val_y is not None and self.early_stopping_rounds > 0:
+                fit_kwargs['eval_set'] = (val_X_flat, val_y[:, i])
+                fit_kwargs['early_stopping_rounds'] = self.early_stopping_rounds
+
+            model.fit(train_X_task, train_y_task, **fit_kwargs)
+
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        X_flat = self.flatten_sequences(X)
+        predictions = []
+        for model in self.models:
+            if model is None:
+                predictions.append(np.full(len(X_flat), 0.5))
+            else:
+                predictions.append(model.predict_proba(X_flat)[:, 1])
+        return np.column_stack(predictions)
+
+    def predict(self, X: np.ndarray, threshold: float = 0.5) -> np.ndarray:
+        return (self.predict_proba(X) >= threshold).astype(int)
+
+
 # ── Factory ───────────────────────────────────────────────────────────────────
 
 def create_model(model_type: str, config: dict):
@@ -393,6 +581,27 @@ def create_model(model_type: str, config: dict):
     num_tasks  = config.get('num_tasks', 6)
 
     mtype = model_type.lower()
+
+    if mtype == 'tcn':
+        cfg = config.get('TCN_CONFIG', {})
+        return TCNModel(
+            input_size=input_size,
+            num_channels=cfg.get('num_channels', [64, 128, 256]),
+            kernel_size=cfg.get('kernel_size', 3),
+            num_tasks=num_tasks,
+            dropout=cfg.get('dropout', 0.3)
+        )
+
+    if mtype == 'catboost':
+        cfg = config.get('CATBOOST_CONFIG', {})
+        return CatBoostPredictor(
+            num_tasks=num_tasks,
+            iterations=cfg.get('iterations', 300),
+            depth=cfg.get('depth', 6),
+            learning_rate=cfg.get('learning_rate', 0.1),
+            task_type=cfg.get('task_type', 'CPU'),
+            early_stopping_rounds=cfg.get('early_stopping_rounds', 20)
+        )
 
     if mtype == 'lstm':
         cfg = config.get('LSTM_CONFIG', {})

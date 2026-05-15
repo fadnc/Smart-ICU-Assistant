@@ -23,6 +23,8 @@ VITAL_SIGNS:
   - tempc
   - spo2
   - glucose
+  - gcs
+  - urine_output
 
 LAB_TESTS:
   - lactate
@@ -44,10 +46,20 @@ LSTM_CONFIG:
   batch_size: 64
   epochs: 50
 
-# NOTE: TCN_CONFIG removed. TCN has been dropped from the codebase.
-# nn.BatchNorm1d collapses under FP16 AMP with imbalanced ICU labels
-# (rare events such as vasopressor, AKI Stage 3, sepsis), producing NaN
-# loss from epoch 2-7 on every task and wasting ~3h per task per run.
+LOSS_FUNCTION: focal # options: bce, focal
+
+TCN_CONFIG:
+  num_channels: [64, 128, 256]
+  kernel_size: 3
+  dropout: 0.3
+  learning_rate: 0.001
+
+CATBOOST_CONFIG:
+  iterations: 300
+  depth: 6
+  learning_rate: 0.1
+  early_stopping_rounds: 20
+  task_type: CPU
 
 # XGBoost 2.x API (gpu_hist deprecated → use device + hist)
 # Updated for imbalanced clinical data: deeper trees, more estimators,

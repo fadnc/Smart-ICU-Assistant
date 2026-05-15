@@ -24,9 +24,10 @@ class MortalityPredictor(BasePredictor):
     """
 
     TASK_NAME = "mortality"
-    TASK_DESCRIPTION = "Early ICU mortality prediction at 6/12/24h horizons"
-    WINDOWS = [6, 12, 24]
-    LABEL_PREFIX = "mortality"
+    TASK_DESCRIPTION = "In-ICU mortality prediction"
+
+    def get_label_names(self) -> list:
+        return ['mortality_in_icu']
 
     def generate_labels(self,
                         stay: pd.Series,
@@ -35,15 +36,20 @@ class MortalityPredictor(BasePredictor):
                         current_time: pd.Timestamp,
                         **extra_data) -> Dict[str, int]:
         labels = {}
-        for window in self.WINDOWS:
-            label_name = f'{self.LABEL_PREFIX}_{window}h'
+        label_name = 'mortality_in_icu'
 
-            if pd.isna(stay.get('dod')):
+        if not pd.isna(stay.get('deathtime')):
+            if stay['deathtime'] <= stay['outtime'] + pd.Timedelta(hours=24):
+                labels[label_name] = 1
+            else:
                 labels[label_name] = 0
-                continue
-
-            time_to_death = (stay['dod'] - current_time).total_seconds() / 3600
-            labels[label_name] = 1 if 0 <= time_to_death <= window else 0
+        elif not pd.isna(stay.get('dod')):
+            if stay['dod'] <= stay['outtime'] + pd.Timedelta(hours=24):
+                labels[label_name] = 1
+            else:
+                labels[label_name] = 0
+        else:
+            labels[label_name] = 0
 
         return labels
 
